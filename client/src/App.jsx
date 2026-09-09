@@ -1,47 +1,31 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Sidebar from './components/Sidebar';
+import DoctorsPage from './pages/DoctorsPage';
 import PatientsPage from './pages/PatientsPage';
 import AppointmentsPage from './pages/AppointmentsPage';
-import BillingPage from './pages/BillingPage';
-import MedicationsPage from './pages/MedicationsPage';
-import Sidebar from './components/Sidebar';
-import ProtectedRoute from './components/ProtectedRoute';
+import MedicinesPage from './pages/MedicinesPage';
+import InventoryPage from './pages/InventoryPage';
+import BillsPage from './pages/BillsPage';
 
-function AppLayout({ children }) {
+function App() {
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      <main className="flex-1 p-6">{children}</main>
-    </div>
+    <Router>
+      <div className="flex bg-slate-50 min-h-screen font-sans text-slate-800">
+        <Sidebar />
+        <main className="flex-1 flex flex-col p-8 overflow-y-auto">
+          <Routes>
+            <Route path="/" element={<Navigate to="/appointments" replace />} />
+            <Route path="/doctors" element={<DoctorsPage />} />
+            <Route path="/patients" element={<PatientsPage />} />
+            <Route path="/appointments" element={<AppointmentsPage />} />
+            <Route path="/medicines" element={<MedicinesPage />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/bills" element={<BillsPage />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 }
 
-export default function App() {
-  return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-
-      <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<Navigate to="/patients" replace />} />
-        <Route
-          path="/patients"
-          element={<AppLayout><PatientsPage /></AppLayout>}
-        />
-        <Route
-          path="/appointments"
-          element={<AppLayout><AppointmentsPage /></AppLayout>}
-        />
-        <Route
-          path="/billing"
-          element={<AppLayout><BillingPage /></AppLayout>}
-        />
-        <Route
-          path="/medications"
-          element={<AppLayout><MedicationsPage /></AppLayout>}
-        />
-      </Route>
-
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
-}
+export default App;

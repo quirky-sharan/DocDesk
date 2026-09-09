@@ -1,80 +1,82 @@
 const pool = require('../db');
 
-// GET /api/patients
-async function listPatients(req, res, next) {
+exports.getAllPatients = async (req, res) => {
   try {
-    const { search } = req.query;
-    let query = 'SELECT * FROM app_patients';
-    const params = [];
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` WHERE owner_name ILIKE $1 OR pet_name ILIKE $1 OR phone ILIKE $1`;
+    const result = await pool.query(`
+      SELECT p.*, d.name as doctor_name 
+      FROM patients p 
+      LEFT JOIN doctors d ON p.doctor_id = d.id 
+      ORDER BY p.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching patients' });
+  }
+};
+
+exports.getPatientById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(`
+      SELECT p.*, d.name as doctor_name 
+      FROM patients p 
+      LEFT JOIN doctors d ON p.doctor_id = d.id 
+      WHERE p.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
     }
-    query += ' ORDER BY created_at DESC';
-    const { rows } = await pool.query(query, params);
-    res.json(rows);
+    res.json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching patient' });
   }
-}
+};
 
-// POST /api/patients
-async function createPatient(req, res, next) {
+exports.createPatient = async (req, res) => {
+  const { name, age, species, phone, doctor_id } = req.body;
   try {
-    const { owner_name, pet_name, species, breed, age, gender, phone, email, address, notes } = req.body;
-    if (!owner_name || !pet_name) {
-      return res.status(400).json({ error: 'owner_name and pet_name are required' });
+    const result = await pool.query(
+      'INSERT INTO patients (name, age, species, phone, doctor_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, age, species, phone, doctor_id || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error creating patient' });
+  }
+};
+
+exports.updatePatient = async (req, res) => {
+  const { id } = req.params;
+  const { name, age, species, phone, doctor_id } = req.body;
+  try {
+    const result = await pool.query(
+      'UPDATE patients SET name = $1, age = $2, species = $3, phone = $4, doctor_id = $5 WHERE id = $6 RETURNING *',
+      [name, age, species, phone, doctor_id || null, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
     }
-    const { rows } = await pool.query(
-      `INSERT INTO app_patients (owner_name, pet_name, species, breed, age, gender, phone, email, address, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING *`,
-      [owner_name, pet_name, species, breed, age, gender, phone, email, address, notes]
-    );
-    res.status(201).json(rows[0]);
+    res.json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error updating patient' });
   }
-}
+};
 
-// GET /api/patients/:id
-async function getPatient(req, res, next) {
+exports.deletePatient = async (req, res) => {
+  const { id } = req.params;
   try {
-    const { rows } = await pool.query('SELECT * FROM app_patients WHERE id = $1', [req.params.id]);
-    if (!rows.length) return res.status(404).json({ error: 'Patient not found' });
-    res.json(rows[0]);
+    const result = await pool.query('DELETE FROM patients WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    res.json({ message: 'Patient deleted successfully' });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error deleting patient' });
   }
-}
-
-// PUT /api/patients/:id
-async function updatePatient(req, res, next) {
-  try {
-    const { owner_name, pet_name, species, breed, age, gender, phone, email, address, notes } = req.body;
-    const { rows } = await pool.query(
-      `UPDATE app_patients SET
-         owner_name=$1, pet_name=$2, species=$3, breed=$4, age=$5,
-         gender=$6, phone=$7, email=$8, address=$9, notes=$10
-       WHERE id=$11 RETURNING *`,
-      [owner_name, pet_name, species, breed, age, gender, phone, email, address, notes, req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Patient not found' });
-    res.json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-}
-
-// DELETE /api/patients/:id
-async function deletePatient(req, res, next) {
-  try {
-    const { rowCount } = await pool.query('DELETE FROM app_patients WHERE id = $1', [req.params.id]);
-    if (!rowCount) return res.status(404).json({ error: 'Patient not found' });
-    res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = { listPatients, createPatient, getPatient, updatePatient, deletePatient };
+};

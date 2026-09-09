@@ -1,93 +1,84 @@
 const pool = require('../db');
 
-// GET /api/appointments
-async function listAppointments(req, res, next) {
+exports.getAllAppointments = async (req, res) => {
   try {
-    const { date, status, patient_id } = req.query;
-    let query = `
-      SELECT a.*, p.pet_name, p.owner_name, u.name AS doctor_name
-      FROM app_appointments a
-      LEFT JOIN patients p ON p.id = a.patient_id
-      LEFT JOIN users    u ON u.id = a.doctor_id
-    `;
-    const conditions = [];
-    const params = [];
-    if (date)      { params.push(date);       conditions.push(`a.appointment_date = $${params.length}`); }
-    if (status)    { params.push(status);     conditions.push(`a.status = $${params.length}`); }
-    if (patient_id){ params.push(patient_id); conditions.push(`a.patient_id = $${params.length}`); }
-    if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
-    query += ' ORDER BY a.appointment_date DESC, a.appointment_time DESC';
-
-    const { rows } = await pool.query(query, params);
-    res.json(rows);
+    const result = await pool.query(`
+      SELECT a.*, p.name as patient_name, d.name as doctor_name 
+      FROM appointments a 
+      LEFT JOIN patients p ON a.patient_id = p.id 
+      LEFT JOIN doctors d ON a.doctor_id = d.id 
+      ORDER BY a.appointment_date ASC
+    `);
+    res.json(result.rows);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching appointments' });
   }
-}
+};
 
-// POST /api/appointments
-async function createAppointment(req, res, next) {
+exports.getAppointmentById = async (req, res) => {
+  const { id } = req.params;
   try {
-    const { patient_id, doctor_id, appointment_date, appointment_time, reason, status, notes } = req.body;
-    if (!patient_id || !appointment_date || !appointment_time) {
-      return res.status(400).json({ error: 'patient_id, appointment_date, and appointment_time are required' });
+    const result = await pool.query(`
+      SELECT a.*, p.name as patient_name, d.name as doctor_name 
+      FROM appointments a 
+      LEFT JOIN patients p ON a.patient_id = p.id 
+      LEFT JOIN doctors d ON a.doctor_id = d.id 
+      WHERE a.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
     }
-    const { rows } = await pool.query(
-      `INSERT INTO app_appointments (patient_id, doctor_id, appointment_date, appointment_time, reason, status, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [patient_id, doctor_id, appointment_date, appointment_time, reason, status || 'scheduled', notes]
-    );
-    res.status(201).json(rows[0]);
+    res.json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error fetching appointment' });
   }
-}
+};
 
-// GET /api/appointments/:id
-async function getAppointment(req, res, next) {
+exports.createAppointment = async (req, res) => {
+  const { patient_id, doctor_id, appointment_date, status, notes } = req.body;
   try {
-    const { rows } = await pool.query(
-      `SELECT a.*, p.pet_name, p.owner_name, u.name AS doctor_name
-       FROM app_appointments a
-       LEFT JOIN patients p ON p.id = a.patient_id
-       LEFT JOIN users    u ON u.id = a.doctor_id
-       WHERE a.id = $1`,
-      [req.params.id]
+    const result = await pool.query(
+      'INSERT INTO appointments (patient_id, doctor_id, appointment_date, status, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [patient_id, doctor_id, appointment_date, status || 'scheduled', notes]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Appointment not found' });
-    res.json(rows[0]);
+    res.status(201).json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error creating appointment' });
   }
-}
+};
 
-// PUT /api/appointments/:id
-async function updateAppointment(req, res, next) {
+exports.updateAppointment = async (req, res) => {
+  const { id } = req.params;
+  const { patient_id, doctor_id, appointment_date, status, notes } = req.body;
   try {
-    const { patient_id, doctor_id, appointment_date, appointment_time, reason, status, notes } = req.body;
-    const { rows } = await pool.query(
-      `UPDATE app_appointments SET
-         patient_id=$1, doctor_id=$2, appointment_date=$3, appointment_time=$4,
-         reason=$5, status=$6, notes=$7
-       WHERE id=$8 RETURNING *`,
-      [patient_id, doctor_id, appointment_date, appointment_time, reason, status, notes, req.params.id]
+    const result = await pool.query(
+      'UPDATE appointments SET patient_id = $1, doctor_id = $2, appointment_date = $3, status = $4, notes = $5 WHERE id = $6 RETURNING *',
+      [patient_id, doctor_id, appointment_date, status, notes, id]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Appointment not found' });
-    res.json(rows[0]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json(result.rows[0]);
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error updating appointment' });
   }
-}
+};
 
-// DELETE /api/appointments/:id
-async function deleteAppointment(req, res, next) {
+exports.deleteAppointment = async (req, res) => {
+  const { id } = req.params;
   try {
-    const { rowCount } = await pool.query('DELETE FROM app_appointments WHERE id = $1', [req.params.id]);
-    if (!rowCount) return res.status(404).json({ error: 'Appointment not found' });
-    res.status(204).end();
+    const result = await pool.query('DELETE FROM appointments WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json({ message: 'Appointment deleted successfully' });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ error: 'Server error deleting appointment' });
   }
-}
-
-module.exports = { listAppointments, createAppointment, getAppointment, updateAppointment, deleteAppointment };
+};

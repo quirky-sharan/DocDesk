@@ -1,140 +1,140 @@
-import { useState } from 'react';
-import Navbar from '../components/Navbar';
-import {
-  useGetPatients,
-  useCreatePatient,
-  useUpdatePatient,
-  useDeletePatient,
-} from '../queries/usePatients';
+import { useState, useEffect } from 'react';
 
-const EMPTY = {
-  owner_name: '', pet_name: '', species: '', breed: '',
-  age: '', gender: '', phone: '', email: '', address: '', notes: '',
-};
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-export default function PatientsPage() {
-  const [search, setSearch]   = useState('');
-  const [modal, setModal]     = useState(null);   // null | 'add' | patient object (edit)
-  const [form, setForm]       = useState(EMPTY);
+const PatientsPage = () => {
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [formData, setFormData] = useState({ name: '', age: '', species: '', phone: '', doctor_id: '' });
+  const [loading, setLoading] = useState(true);
 
-  const { data: patients = [], isLoading } = useGetPatients(search);
-  const create  = useCreatePatient();
-  const update  = useUpdatePatient();
-  const remove  = useDeletePatient();
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  function openAdd()  { setForm(EMPTY); setModal('add'); }
-  function openEdit(p){ setForm(p);     setModal(p); }
-  function closeModal(){ setModal(null); }
+  const fetchData = async () => {
+    try {
+      const [patientsRes, doctorsRes] = await Promise.all([
+        fetch(`${API_URL}/patients`),
+        fetch(`${API_URL}/doctors`)
+      ]);
+      const patientsData = await patientsRes.json();
+      const doctorsData = await doctorsRes.json();
+      setPatients(patientsData);
+      setDoctors(doctorsData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (modal === 'add') await create.mutateAsync(form);
-    else await update.mutateAsync({ ...form, id: modal.id });
-    closeModal();
-  }
+    try {
+      const payload = { ...formData, doctor_id: formData.doctor_id || null };
+      await fetch(`${API_URL}/patients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setFormData({ name: '', age: '', species: '', phone: '', doctor_id: '' });
+      fetchData();
+    } catch (error) {
+      console.error('Error creating patient:', error);
+    }
+  };
 
-  async function handleDelete(id) {
-    if (!confirm('Delete this patient?')) return;
-    await remove.mutateAsync(id);
-  }
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this patient?')) return;
+    try {
+      await fetch(`${API_URL}/patients/${id}`, { method: 'DELETE' });
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting patient:', error);
+    }
+  };
+
+  if (loading) return <div className="text-center p-10 text-slate-500">Loading patients...</div>;
 
   return (
-    <div>
-      <Navbar title="Patients" />
-
-      <div className="flex items-center justify-between mb-4">
-        <input
-          type="text"
-          placeholder="Search by name or phone…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 w-72 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={openAdd}
-          className="bg-blue-700 text-white px-4 py-2 rounded-lg hover:bg-blue-800"
-        >
-          + Add Patient
-        </button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800">Patients</h1>
+          <p className="text-slate-500 mt-1">Manage patient records</p>
+        </div>
       </div>
 
-      {isLoading ? (
-        <p className="text-gray-500">Loading…</p>
-      ) : (
-        <div className="overflow-x-auto bg-white rounded-xl shadow">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-gray-600 uppercase text-xs">
-              <tr>
-                {['ID','Pet Name','Owner','Species','Phone','Email','Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {patients.map(p => (
-                <tr key={p.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3">{p.id}</td>
-                  <td className="px-4 py-3 font-medium">{p.pet_name}</td>
-                  <td className="px-4 py-3">{p.owner_name}</td>
-                  <td className="px-4 py-3">{p.species || '—'}</td>
-                  <td className="px-4 py-3">{p.phone || '—'}</td>
-                  <td className="px-4 py-3">{p.email || '—'}</td>
-                  <td className="px-4 py-3 space-x-2">
-                    <button onClick={() => openEdit(p)} className="text-blue-600 hover:underline">Edit</button>
-                    <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {!patients.length && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">No patients found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Add / Edit Modal */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">{modal === 'add' ? 'Add Patient' : 'Edit Patient'}</h2>
-            <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
-              {[
-                ['owner_name','Owner Name',true],['pet_name','Pet Name',true],
-                ['species','Species'],['breed','Breed'],
-                ['age','Age (years)'],['gender','Gender'],
-                ['phone','Phone'],['email','Email'],
-              ].map(([key, label, req]) => (
-                <div key={key}>
-                  <label className="text-xs text-gray-600 mb-1 block">{label}{req && ' *'}</label>
-                  <input
-                    required={!!req}
-                    value={form[key] || ''}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
-                </div>
-              ))}
-              <div className="col-span-2">
-                <label className="text-xs text-gray-600 mb-1 block">Address</label>
-                <input value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-gray-600 mb-1 block">Notes</label>
-                <textarea rows={2} value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              </div>
-              <div className="col-span-2 flex justify-end gap-2 mt-2">
-                <button type="button" onClick={closeModal} className="px-4 py-2 text-sm rounded-lg border">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-sm rounded-lg bg-blue-700 text-white hover:bg-blue-800">
-                  {modal === 'add' ? 'Create' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
+      <div className="card">
+        <h2 className="text-lg font-semibold mb-4 text-slate-700">Add New Patient</h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Name</label>
+            <input type="text" required className="input-field" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           </div>
-        </div>
-      )}
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Age</label>
+            <input type="number" className="input-field" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Species (if vet)</label>
+            <input type="text" className="input-field" value={formData.species} onChange={e => setFormData({...formData, species: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Phone</label>
+            <input type="text" className="input-field" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Assigned Doctor</label>
+            <select className="input-field bg-white" value={formData.doctor_id} onChange={e => setFormData({...formData, doctor_id: e.target.value})}>
+              <option value="">-- None --</option>
+              {doctors.map(d => <option key={d.id} value={d.id}>Dr. {d.name}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="btn-primary h-[42px]">Add Patient</button>
+        </form>
+      </div>
+
+      <div className="card overflow-hidden !p-0">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr>
+              <th className="table-header">Name</th>
+              <th className="table-header">Age</th>
+              <th className="table-header">Species</th>
+              <th className="table-header">Phone</th>
+              <th className="table-header">Doctor</th>
+              <th className="table-header text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {patients.map(p => (
+              <tr key={p.id} className="hover:bg-slate-50/80 group">
+                <td className="table-cell font-medium text-slate-800">{p.name}</td>
+                <td className="table-cell">{p.age || '-'}</td>
+                <td className="table-cell">{p.species || '-'}</td>
+                <td className="table-cell">{p.phone || '-'}</td>
+                <td className="table-cell">
+                  {p.doctor_name ? (
+                    <span className="text-slate-600 font-medium">Dr. {p.doctor_name}</span>
+                  ) : (
+                    <span className="text-slate-400 italic">Unassigned</span>
+                  )}
+                </td>
+                <td className="table-cell text-right">
+                  <button onClick={() => handleDelete(p.id)} className="btn-danger opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                </td>
+              </tr>
+            ))}
+            {patients.length === 0 && (
+              <tr><td colSpan="6" className="table-cell text-center text-slate-400 py-8">No patients found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-}
+};
+
+export default PatientsPage;

@@ -1,14 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { authMiddleware } = require('../middleware/authMiddleware');
-const ctrl = require('../controllers/patientController');
+const patientController = require('../controllers/patientController');
 
-router.use(authMiddleware); // all patient routes require login
-
-router.get('/',      ctrl.listPatients);
-router.post('/',     ctrl.createPatient);
-router.get('/:id',   ctrl.getPatient);
-router.put('/:id',   ctrl.updatePatient);
-router.delete('/:id', ctrl.deletePatient);
+router.get('/', patientController.getAllPatients);
+router.get('/:id', patientController.getPatientById);
+router.post('/', patientController.createPatient);
+router.put('/:id', patientController.updatePatient);
+router.delete('/:id', patientController.deletePatient);
 
 module.exports = router;

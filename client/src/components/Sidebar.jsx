@@ -1,47 +1,49 @@
 import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 
-const links = [
-  { to: '/patients',     label: 'Patients' },
-  { to: '/appointments', label: 'Appointments' },
-  { to: '/billing',      label: 'Billing' },
-  { to: '/medications',  label: 'Medications' },
-];
-
-export default function Sidebar() {
-  const { pathname } = useLocation();
-  const { user, logout } = useAuth();
+const Sidebar = () => {
+  const location = useLocation();
+  
+  const navItems = [
+    { name: 'Dashboard', path: '/' },
+    { name: 'Doctors', path: '/doctors' },
+    { name: 'Patients', path: '/patients' },
+    { name: 'Appointments', path: '/appointments' },
+    { name: 'Medicines', path: '/medicines' },
+    { name: 'Inventory', path: '/inventory' },
+    { name: 'Bills', path: '/bills' },
+  ];
 
   return (
-    <aside className="w-56 bg-blue-700 text-white flex flex-col min-h-screen">
-      <div className="px-4 py-5 text-2xl font-bold border-b border-blue-600">
-        🩺 DocDesk
+    <div className="w-64 bg-slate-900 text-white min-h-screen flex flex-col shadow-2xl">
+      <div className="p-6 border-b border-slate-800">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent">
+          DocDesk
+        </h1>
+        <p className="text-slate-400 text-sm mt-1">Clinic Management</p>
       </div>
-
-      <nav className="flex-1 mt-4">
-        {links.map(({ to, label }) => (
-          <Link
-            key={to}
-            to={to}
-            className={`block px-4 py-3 text-sm font-medium transition-colors hover:bg-blue-600 ${
-              pathname.startsWith(to) ? 'bg-blue-800' : ''
-            }`}
-          >
-            {label}
-          </Link>
-        ))}
+      <nav className="flex-1 p-4 space-y-2">
+        {navItems.map((item) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Link
+              key={item.name}
+              to={item.path}
+              className={`block px-4 py-3 rounded-lg transition-all duration-300 ${
+                isActive 
+                  ? 'bg-gradient-to-r from-teal-500 to-blue-600 text-white shadow-lg transform translate-x-2' 
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white hover:translate-x-1'
+              }`}
+            >
+              {item.name}
+            </Link>
+          );
+        })}
       </nav>
-
-      <div className="px-4 py-4 border-t border-blue-600 text-xs">
-        <p className="truncate font-medium">{user?.name}</p>
-        <p className="opacity-75 mb-3 capitalize">{user?.role}</p>
-        <button
-          onClick={logout}
-          className="w-full bg-blue-900 hover:bg-blue-950 py-1.5 rounded text-sm"
-        >
-          Logout
-        </button>
+      <div className="p-6 border-t border-slate-800 text-sm text-slate-500">
+        &copy; 2026 DocDesk
       </div>
-    </aside>
+    </div>
   );
-}
+};
+
+export default Sidebar;

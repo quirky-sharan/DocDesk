@@ -1,154 +1,160 @@
-import { useState } from 'react';
-import Navbar from '../components/Navbar';
-import {
-  useGetAppointments,
-  useCreateAppointment,
-  useUpdateAppointment,
-  useDeleteAppointment,
-} from '../queries/useAppointments';
+import { useState, useEffect } from 'react';
 
-const STATUS_COLORS = {
-  scheduled:  'bg-blue-100 text-blue-700',
-  completed:  'bg-green-100 text-green-700',
-  cancelled:  'bg-red-100 text-red-600',
-};
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-const EMPTY = {
-  patient_id: '', doctor_id: '', appointment_date: '',
-  appointment_time: '', reason: '', status: 'scheduled', notes: '',
-};
+const AppointmentsPage = () => {
+  const [appointments, setAppointments] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [formData, setFormData] = useState({ patient_id: '', doctor_id: '', appointment_date: '', status: 'scheduled', notes: '' });
+  const [loading, setLoading] = useState(true);
 
-export default function AppointmentsPage() {
-  const [filters, setFilters]  = useState({});
-  const [modal, setModal]      = useState(null);
-  const [form, setForm]        = useState(EMPTY);
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const { data: appointments = [], isLoading } = useGetAppointments(filters);
-  const create  = useCreateAppointment();
-  const update  = useUpdateAppointment();
-  const remove  = useDeleteAppointment();
+  const fetchData = async () => {
+    try {
+      const [apptRes, patRes, docRes] = await Promise.all([
+        fetch(`${API_URL}/appointments`),
+        fetch(`${API_URL}/patients`),
+        fetch(`${API_URL}/doctors`)
+      ]);
+      setAppointments(await apptRes.json());
+      setPatients(await patRes.json());
+      setDoctors(await docRes.json());
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  function openAdd()   { setForm(EMPTY); setModal('add'); }
-  function openEdit(a) { setForm(a);     setModal(a); }
-  function closeModal(){ setModal(null); }
-
-  async function handleSubmit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (modal === 'add') await create.mutateAsync(form);
-    else await update.mutateAsync({ ...form, id: modal.id });
-    closeModal();
-  }
+    try {
+      await fetch(`${API_URL}/appointments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      setFormData({ ...formData, patient_id: '', appointment_date: '', notes: '' });
+      fetchData();
+    } catch (error) {
+      console.error('Error creating appointment:', error);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this appointment?')) return;
+    try {
+      await fetch(`${API_URL}/appointments/${id}`, { method: 'DELETE' });
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting appointment:', error);
+    }
+  };
+  
+  const handleStatusChange = async (id, newStatus, appt) => {
+    try {
+      await fetch(`${API_URL}/appointments/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...appt, status: newStatus }),
+      });
+      fetchData();
+    } catch (error) {
+      console.error('Error updating status:', error);
+    }
+  };
+
+  if (loading) return <div className="text-center p-10 text-slate-500">Loading appointments...</div>;
 
   return (
-    <div>
-      <Navbar title="Appointments" />
-
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
-          <input
-            type="date"
-            onChange={e => setFilters(f => ({ ...f, date: e.target.value || undefined }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            onChange={e => setFilters(f => ({ ...f, status: e.target.value || undefined }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All statuses</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800">Appointments</h1>
+          <p className="text-slate-500 mt-1">Schedule and manage visits</p>
         </div>
-        <button
-          onClick={openAdd}
-          className="bg-blue-700 text-white px-4 py-2 rounded-lg hover:bg-blue-800"
-        >
-          + New Appointment
-        </button>
       </div>
 
-      {isLoading ? (
-        <p className="text-gray-500">Loading…</p>
-      ) : (
-        <div className="overflow-x-auto bg-white rounded-xl shadow">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-100 text-gray-600 uppercase text-xs">
-              <tr>
-                {['ID','Pet','Owner','Date','Time','Doctor','Status','Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {appointments.map(a => (
-                <tr key={a.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-3">{a.id}</td>
-                  <td className="px-4 py-3 font-medium">{a.pet_name}</td>
-                  <td className="px-4 py-3">{a.owner_name}</td>
-                  <td className="px-4 py-3">{a.appointment_date}</td>
-                  <td className="px-4 py-3">{a.appointment_time}</td>
-                  <td className="px-4 py-3">{a.doctor_name || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[a.status] || ''}`}>
-                      {a.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 space-x-2">
-                    <button onClick={() => openEdit(a)} className="text-blue-600 hover:underline">Edit</button>
-                    <button onClick={() => remove.mutate(a.id)} className="text-red-500 hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {!appointments.length && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">No appointments found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {modal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
-            <h2 className="text-lg font-semibold mb-4">{modal === 'add' ? 'New Appointment' : 'Edit Appointment'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              {[
-                ['patient_id','Patient ID',true,'number'],
-                ['doctor_id','Doctor ID (optional)',false,'number'],
-                ['appointment_date','Date',true,'date'],
-                ['appointment_time','Time',true,'time'],
-                ['reason','Reason'],
-              ].map(([key, label, req, type]) => (
-                <div key={key}>
-                  <label className="text-xs text-gray-600 mb-1 block">{label}</label>
-                  <input
-                    required={!!req} type={type || 'text'}
-                    value={form[key] || ''}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
-                </div>
-              ))}
-              <div>
-                <label className="text-xs text-gray-600 mb-1 block">Status</label>
-                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-                  <option value="scheduled">Scheduled</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 mt-2">
-                <button type="button" onClick={closeModal} className="px-4 py-2 text-sm rounded-lg border">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-sm rounded-lg bg-blue-700 text-white hover:bg-blue-800">
-                  {modal === 'add' ? 'Create' : 'Save'}
-                </button>
-              </div>
-            </form>
+      <div className="card">
+        <h2 className="text-lg font-semibold mb-4 text-slate-700">Schedule Appointment</h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Patient</label>
+            <select required className="input-field bg-white" value={formData.patient_id} onChange={e => setFormData({...formData, patient_id: e.target.value})}>
+              <option value="">Select Patient</option>
+              {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
           </div>
-        </div>
-      )}
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Doctor</label>
+            <select required className="input-field bg-white" value={formData.doctor_id} onChange={e => setFormData({...formData, doctor_id: e.target.value})}>
+              <option value="">Select Doctor</option>
+              {doctors.map(d => <option key={d.id} value={d.id}>Dr. {d.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Date & Time</label>
+            <input type="datetime-local" required className="input-field" value={formData.appointment_date} onChange={e => setFormData({...formData, appointment_date: e.target.value})} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-slate-600 mb-1">Notes</label>
+            <input type="text" className="input-field" placeholder="Reason for visit..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+          </div>
+          <button type="submit" className="btn-primary h-[42px]">Schedule</button>
+        </form>
+      </div>
+
+      <div className="card overflow-hidden !p-0">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr>
+              <th className="table-header">Date & Time</th>
+              <th className="table-header">Patient</th>
+              <th className="table-header">Doctor</th>
+              <th className="table-header">Status</th>
+              <th className="table-header text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {appointments.map(a => (
+              <tr key={a.id} className="hover:bg-slate-50/80 group">
+                <td className="table-cell font-medium text-slate-800">
+                  {new Date(a.appointment_date).toLocaleString()}
+                </td>
+                <td className="table-cell">{a.patient_name}</td>
+                <td className="table-cell">Dr. {a.doctor_name}</td>
+                <td className="table-cell">
+                  <select 
+                    className={`text-xs font-semibold rounded-full px-3 py-1 border outline-none appearance-none cursor-pointer ${
+                      a.status === 'scheduled' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      a.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                      'bg-red-50 text-red-700 border-red-200'
+                    }`}
+                    value={a.status}
+                    onChange={(e) => handleStatusChange(a.id, e.target.value, a)}
+                  >
+                    <option value="scheduled">Scheduled</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </td>
+                <td className="table-cell text-right">
+                  <button onClick={() => handleDelete(a.id)} className="btn-danger opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                </td>
+              </tr>
+            ))}
+            {appointments.length === 0 && (
+              <tr><td colSpan="5" className="table-cell text-center text-slate-400 py-8">No appointments found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-}
+};
+
+export default AppointmentsPage;
