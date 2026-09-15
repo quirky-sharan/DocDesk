@@ -7,6 +7,7 @@ const { listTables } = require('./db/migrate');
 const errorHandler = require('./middleware/errorHandler');
 const systemRoutes = require('./routes/system');
 const devRoutes = require('./routes/dev');
+const apiRoutes = require('./routes');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 
 app.use('/api', systemRoutes);
 app.use('/api/dev', devRoutes);
+app.use('/api', apiRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
