@@ -12,6 +12,9 @@ const EXAMPLES = {
   sales: ['sort by total, highest first', 'show only unpaid sales', 'total revenue per payment method'],
   customers: ['sort by name', 'add a column for date of birth', 'show customers with no email'],
   suppliers: ['sort by name', 'add a column for lead time'],
+  purchase_orders: ['sort by expected date', 'show only orders still outstanding', 'total cost per supplier'],
+  files: ['sort by size, largest first', 'show only PDFs', 'sort by name'],
+  message_log: ['show only failed messages', 'sort by newest first', 'how many of each status'],
 };
 
 /**

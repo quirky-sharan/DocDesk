@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
+import { useAskOutcome } from '../hooks/useAskOutcome';
+import AskBar from '../components/AskBar';
 import {
   PageHeader, ErrorNote, Table, Badge, ConfirmButton, ExportButtons,
   SearchInput, Select, Pagination,
@@ -16,6 +18,9 @@ export default function MessagesPage() {
 
   const fetcher = useCallback((params) => api.messages.list(params), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { status } });
+  const handleAsk = useAskOutcome(list, {
+    filterHandlers: { status: (value) => setStatus(String(value)) },
+  });
 
   // The send button needs the total waiting, not just what is on this page.
   useEffect(() => {
@@ -93,6 +98,8 @@ export default function MessagesPage() {
           {notice}
         </div>
       )}
+
+      <AskBar table="message_log" onView={handleAsk} />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search messages…" />

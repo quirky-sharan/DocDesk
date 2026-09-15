@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
+import { useAskOutcome } from '../hooks/useAskOutcome';
+import AskBar from '../components/AskBar';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
   ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
@@ -27,6 +29,10 @@ export default function PurchaseOrdersPage() {
   useEffect(() => {
     api.products.restockSuggestion().then((d) => setLowCount(d.count)).catch(() => {});
   }, [list.meta.total]);
+
+  const handleAsk = useAskOutcome(list, {
+    filterHandlers: { status: (value) => setStatus(String(value)) },
+  });
 
   async function remove(id) {
     try {
@@ -76,6 +82,8 @@ export default function PurchaseOrdersPage() {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
+
+      <AskBar table="purchase_orders" onView={handleAsk} />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search orders or supplier…" />
