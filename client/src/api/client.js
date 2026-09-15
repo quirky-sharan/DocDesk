@@ -116,6 +116,10 @@ export const api = {
     salesByDay: (params) => request(`/reports/sales-by-day${query(params)}`),
     topProducts: (params) => request(`/reports/top-products${query(params)}`),
     topCustomers: (params) => request(`/reports/top-customers${query(params)}`),
+    byCategory: (params) => request(`/reports/by-category${query(params)}`),
+    byPaymentMethod: (params) => request(`/reports/by-payment-method${query(params)}`),
+    stockByCategory: () => request('/reports/stock-by-category'),
+    pulse: () => request('/reports/pulse'),
   },
 };
 

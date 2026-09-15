@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Chart palette. Slots are assigned in fixed order and never cycled; a 5th
+   category folds into "Other". Validated for the light surface: worst adjacent
+   CVD dE 9.1, normal-vision 22.9. Three slots sit under 3:1 contrast, so every
+   chart using them ships visible labels or a legend. Dark steps land in Phase 3. */
+:root {
+  --chart-surface: #fcfcfb;
+  --chart-grid: #e7e5e4;
+  --chart-axis: #a8a29e;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-other: #78716c;
+}
+
 @layer base {
   body {
     @apply antialiased bg-slate-50;

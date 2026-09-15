@@ -194,3 +194,120 @@ exports.customerHistory = async (req, res, next) => {
     next(err);
   }
 };
+
+// Revenue split by product category, for the breakdown chart. Lines whose
+// product was deleted fall into "Other" rather than vanishing from the total.
+exports.byCategory = async (req, res, next) => {
+  try {
+    const { from, to } = windowFrom(req.query);
+    const { rows } = await db.query(
+      `SELECT COALESCE(NULLIF(p.category, ''), 'Uncategorised') AS category,
+              SUM(si.line_total) AS revenue,
+              SUM(si.quantity)   AS quantity
+       FROM sale_items si
+       JOIN sales s ON s.id = si.sale_id
+       LEFT JOIN products p ON p.id = si.product_id
+       WHERE s.created_at >= $1 AND s.created_at <= $2
+       GROUP BY COALESCE(NULLIF(p.category, ''), 'Uncategorised')
+       ORDER BY revenue DESC`,
+      [from, `${to} 23:59:59`]
+    );
+    res.json(rows.map((r) => ({
+      category: r.category,
+      revenue: money(r.revenue),
+      quantity: Number(r.quantity),
+    })));
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.byPaymentMethod = async (req, res, next) => {
+  try {
+    const { from, to } = windowFrom(req.query);
+    const { rows } = await db.query(
+      `SELECT COALESCE(NULLIF(payment_method, ''), 'Not recorded') AS method,
+              COUNT(*) AS sale_count, SUM(total) AS revenue
+       FROM sales WHERE created_at >= $1 AND created_at <= $2
+       GROUP BY COALESCE(NULLIF(payment_method, ''), 'Not recorded')
+       ORDER BY revenue DESC`,
+      [from, `${to} 23:59:59`]
+    );
+    res.json(rows.map((r) => ({
+      method: r.method,
+      saleCount: Number(r.sale_count),
+      revenue: money(r.revenue),
+    })));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// What the stock on the shelves is worth, split by category.
+exports.stockByCategory = async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT COALESCE(NULLIF(category, ''), 'Uncategorised') AS category,
+              COUNT(*) AS products,
+              SUM(stock_quantity) AS units,
+              SUM(stock_quantity * cost_price) AS value
+       FROM products
+       GROUP BY COALESCE(NULLIF(category, ''), 'Uncategorised')
+       ORDER BY value DESC`
+    );
+    res.json(rows.map((r) => ({
+      category: r.category,
+      products: Number(r.products),
+      units: Number(r.units || 0),
+      value: money(r.value),
+    })));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Today and this week against the equivalent earlier period, so the dashboard
+ * can say whether things are up or down rather than just showing a number.
+ */
+exports.pulse = async (req, res, next) => {
+  try {
+    const startOfDay = (offsetDays) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - offsetDays);
+      return d.toISOString().slice(0, 19).replace('T', ' ');
+    };
+
+    async function windowTotals(fromExpr, toExpr) {
+      const { rows } = await db.query(
+        `SELECT COUNT(*) AS sale_count, COALESCE(SUM(total), 0) AS revenue
+         FROM sales WHERE created_at >= $1 AND created_at < $2`,
+        [fromExpr, toExpr]
+      );
+      return { saleCount: Number(rows[0].sale_count), revenue: money(rows[0].revenue) };
+    }
+
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const [today, yesterday, thisWeek, lastWeek] = await Promise.all([
+      windowTotals(startOfDay(0), now),
+      windowTotals(startOfDay(1), startOfDay(0)),
+      windowTotals(startOfDay(6), now),
+      windowTotals(startOfDay(13), startOfDay(6)),
+    ]);
+
+    const change = (current, previous) =>
+      previous === 0 ? (current > 0 ? 100 : 0) : Math.round(((current - previous) / previous) * 100);
+
+    res.json({
+      today,
+      yesterday,
+      thisWeek,
+      lastWeek,
+      dayChangePercent: change(today.revenue, yesterday.revenue),
+      weekChangePercent: change(thisWeek.revenue, lastWeek.revenue),
+    });
+  } catch (err) {
+    next(err);
+  }
+};

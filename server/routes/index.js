@@ -74,6 +74,10 @@ router.get('/reports/summary', reports.summary);
 router.get('/reports/sales-by-day', reports.salesByDay);
 router.get('/reports/top-products', reports.topProducts);
 router.get('/reports/top-customers', reports.topCustomers);
+router.get('/reports/by-category', reports.byCategory);
+router.get('/reports/by-payment-method', reports.byPaymentMethod);
+router.get('/reports/stock-by-category', reports.stockByCategory);
+router.get('/reports/pulse', reports.pulse);
 router.get('/customers/:id/history', reports.customerHistory);
 
 router.get('/export', exportsCtrl.options);

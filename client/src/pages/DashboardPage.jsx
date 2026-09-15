@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { PageHeader, ErrorNote, Badge, Money } from '../components/ui';
+import { AreaChart, HorizontalBars, ShareBar, Sparkline } from '../components/charts';
 
 export default function DashboardPage() {
-  const [summary, setSummary] = useState(null);
-  const [sales, setSales] = useState([]);
-  const [messages, setMessages] = useState([]);
+  const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -14,18 +13,20 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [sum, recentSales, queued] = await Promise.all([
+      const [summary, pulse, byDay, sales, topProducts, payments, queued] = await Promise.all([
         api.products.summary(),
-        api.sales.list({ limit: 5, sort: 'created_at', dir: 'desc' }),
-        api.messages.list({ status: 'queued', limit: 5 }),
+        api.reports.pulse(),
+        api.reports.salesByDay({ days: 30 }),
+        api.sales.list({ pageSize: 5, sort: 'created_at', dir: 'desc' }),
+        api.reports.topProducts({ days: 30, limit: 5 }),
+        api.reports.byPaymentMethod({ days: 30 }),
+        api.messages.list({ status: 'queued', pageSize: 4 }),
       ]);
-      setSummary(sum);
-      setSales(recentSales.rows);
-      setMessages(queued.rows);
+      setData({ summary, pulse, series: byDay.series, sales: sales.rows, topProducts, payments, queued: queued.rows, queuedTotal: queued.total });
       setError(null);
     } catch (err) {
       setError(err.message);
-      setSummary(null);
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -47,12 +48,12 @@ export default function DashboardPage() {
     }
   }
 
-  const isEmpty = summary && summary.total === 0 && sales.length === 0;
-  const salesTotal = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+  const isEmpty = data && data.summary.total === 0 && data.sales.length === 0;
 
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="How the shop is doing right now.">
+        <Link className="btn-secondary" to="/reports">Full reports</Link>
         <button className="btn-secondary" onClick={load} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
@@ -61,12 +62,13 @@ export default function DashboardPage() {
       <ErrorNote error={error} onDismiss={() => setError(null)} />
 
       {isEmpty && (
-        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-8 text-center">
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
           <p className="text-lg font-medium">Nothing here yet</p>
           <p className="mt-1 text-slate-500">
-            Add your products one at a time, or drop in some sample data to look around first.
+            Add your products one at a time, import a spreadsheet, or drop in some sample data
+            to look around first.
           </p>
-          <div className="mt-4 flex justify-center gap-2">
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
             <Link className="btn-primary" to="/inventory">Add a product</Link>
             <button className="btn-secondary" onClick={addSampleData} disabled={busy}>
               {busy ? 'Adding…' : 'Use sample data'}
@@ -75,13 +77,57 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {summary && !isEmpty && (
+      {data && !isEmpty && (
         <>
           <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Card label="Products" value={summary.total} to="/inventory" />
-            <Card label="Low stock" value={summary.lowStock} tone="amber" to="/inventory" />
-            <Card label="Out of stock" value={summary.outOfStock} tone="red" to="/inventory" />
-            <Card label="Stock value" value={Number(summary.stockValue).toFixed(2)} />
+            <PulseCard
+              label="Today"
+              value={data.pulse.today.revenue}
+              meta={`${data.pulse.today.saleCount} sale${data.pulse.today.saleCount === 1 ? '' : 's'}`}
+              change={data.pulse.dayChangePercent}
+              changeLabel="vs yesterday"
+            />
+            <PulseCard
+              label="Last 7 days"
+              value={data.pulse.thisWeek.revenue}
+              meta={`${data.pulse.thisWeek.saleCount} sales`}
+              change={data.pulse.weekChangePercent}
+              changeLabel="vs week before"
+              spark={data.series.slice(-7).map((d) => d.revenue)}
+            />
+            <StatCard label="Needs restocking" value={data.summary.lowStock + data.summary.outOfStock}
+                      meta={`${data.summary.outOfStock} out of stock`} to="/inventory"
+                      tone={data.summary.outOfStock > 0 ? 'red' : 'amber'} />
+            <StatCard label="Stock value" value={Number(data.summary.stockValue).toFixed(2)}
+                      meta={`${data.summary.total} products`} to="/inventory" />
+          </div>
+
+          <section className="card mb-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Revenue, last 30 days</h2>
+                <p className="text-sm text-slate-500">Hover the chart to read any day.</p>
+              </div>
+              <Link className="text-sm text-blue-600 hover:underline" to="/reports">Reports</Link>
+            </div>
+            <AreaChart series={data.series} height={230} />
+          </section>
+
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section className="card">
+              <h2 className="mb-4 text-lg font-semibold">Best sellers this month</h2>
+              <HorizontalBars
+                rows={data.topProducts}
+                labelKey="name"
+                valueKey="revenue"
+              />
+            </section>
+
+            <section className="card">
+              <h2 className="mb-1 text-lg font-semibold">How people paid</h2>
+              <p className="mb-4 text-sm text-slate-500">Share of revenue, last 30 days.</p>
+              <ShareBar rows={data.payments} labelKey="method" valueKey="revenue" />
+            </section>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -90,11 +136,11 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-semibold">Needs restocking</h2>
                 <Link className="text-sm text-blue-600 hover:underline" to="/orders">Order stock</Link>
               </div>
-              {summary.needsAttention.length === 0 ? (
+              {data.summary.needsAttention.length === 0 ? (
                 <p className="text-slate-500">Everything is above its reorder level.</p>
               ) : (
                 <ul className="space-y-2">
-                  {summary.needsAttention.slice(0, 6).map((p) => (
+                  {data.summary.needsAttention.slice(0, 6).map((p) => (
                     <li key={p.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
                       <div>
                         <p className="font-medium">{p.name}</p>
@@ -114,40 +160,46 @@ export default function DashboardPage() {
                 <h2 className="text-lg font-semibold">Latest sales</h2>
                 <Link className="text-sm text-blue-600 hover:underline" to="/sales">All sales</Link>
               </div>
-              {sales.length === 0 ? (
+              {data.sales.length === 0 ? (
                 <p className="text-slate-500">No sales recorded yet.</p>
               ) : (
-                <>
-                  <ul className="space-y-2">
-                    {sales.map((s) => (
-                      <li key={s.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
-                        <div>
-                          <p className="font-medium">{s.reference}</p>
-                          <p className="text-xs text-slate-500">
-                            {s.customer_name || 'Walk-in'} · {new Date(s.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
+                <ul className="space-y-2">
+                  {data.sales.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
+                      <div>
+                        <p className="font-medium">{s.reference}</p>
+                        <p className="text-xs text-slate-500">
+                          {s.customer_name || 'Walk-in'} · {new Date(s.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
                         <span className="font-medium"><Money value={s.total} /></span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-3 text-sm text-slate-500">
-                    {sales.length === 1 ? 'That sale came to ' : `Those ${sales.length} sales come to `}
-                    <strong>{salesTotal.toFixed(2)}</strong>.
-                  </p>
-                </>
+                        {s.payment_status !== 'paid' && (
+                          <div className="mt-0.5">
+                            <Badge tone={s.payment_status === 'unpaid' ? 'red' : 'amber'}>
+                              {s.payment_status}
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </section>
           </div>
 
-          {messages.length > 0 && (
+          {data.queued.length > 0 && (
             <section className="card mt-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Waiting to be sent</h2>
+                <h2 className="text-lg font-semibold">
+                  Waiting to be sent
+                  <span className="ml-2 text-sm font-normal text-slate-500">{data.queuedTotal}</span>
+                </h2>
                 <Link className="text-sm text-blue-600 hover:underline" to="/messages">View all</Link>
               </div>
               <ul className="space-y-2">
-                {messages.map((m) => (
+                {data.queued.map((m) => (
                   <li key={m.id} className="border-b border-slate-100 pb-2 last:border-0">
                     <p className="font-medium">{m.subject}</p>
                     <p className="text-xs text-slate-500">{m.body}</p>
@@ -162,18 +214,44 @@ export default function DashboardPage() {
   );
 }
 
-function Card({ label, value, tone, to }) {
-  const toneClass = tone === 'amber' ? 'text-amber-600' : tone === 'red' ? 'text-red-600' : '';
-  const content = (
+function PulseCard({ label, value, meta, change, changeLabel, spark }) {
+  const up = change > 0;
+  const flat = change === 0;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-2xl font-semibold">{Number(value).toFixed(2)}</p>
+          <p className="text-sm text-slate-500">{label}</p>
+        </div>
+        {spark && <Sparkline values={spark} width={72} height={28} />}
+      </div>
+      <div className="mt-2 flex items-center gap-2 text-xs">
+        {/* Arrow plus sign, so direction is not carried by colour alone. */}
+        <span className={flat ? 'text-slate-500' : up ? 'text-green-700' : 'text-red-700'}>
+          {flat ? '—' : up ? '▲' : '▼'} {Math.abs(change)}%
+        </span>
+        <span className="text-slate-400">{changeLabel}</span>
+        <span className="ml-auto text-slate-400">{meta}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, meta, tone, to }) {
+  const toneClass = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : '';
+  const body = (
     <>
       <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
       <p className="text-sm text-slate-500">{label}</p>
+      <p className="mt-2 text-xs text-slate-400">{meta}</p>
     </>
   );
-  const className = 'block rounded-lg border border-slate-200 bg-white p-4';
   return to ? (
-    <Link to={to} className={`${className} hover:border-slate-300`}>{content}</Link>
+    <Link to={to} className="block rounded-lg border border-slate-200 bg-white p-4 hover:border-slate-300">
+      {body}
+    </Link>
   ) : (
-    <div className={className}>{content}</div>
+    <div className="rounded-lg border border-slate-200 bg-white p-4">{body}</div>
   );
 }
