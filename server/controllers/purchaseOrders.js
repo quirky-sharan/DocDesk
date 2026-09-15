@@ -1,5 +1,5 @@
 const db = require('../db');
-const { listRows } = require('../lib/tables');
+const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, number, oneOf, id, money } = require('../lib/validate');
 const { checkStockLevels } = require('../lib/messaging');
 
@@ -22,24 +22,13 @@ async function loadOrder(orderId, runner = db) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { search, sort, dir, limit, offset, status } = req.query;
-    const result = await listRows('purchase_orders', {
-      search,
-      sort,
-      dir,
-      limit,
-      offset,
-      where: status ? { status } : {},
-    });
-
-    const { rows: suppliers } = await db.query('SELECT id, name FROM suppliers');
-    const nameById = new Map(suppliers.map((s) => [s.id, s.name]));
-    const rows = result.rows.map((order) => ({
-      ...order,
-      supplier_name: order.supplier_id ? nameById.get(order.supplier_id) || null : null,
-    }));
-
-    res.json({ rows, total: result.total });
+    const { status } = req.query;
+    res.json(
+      await listRows('purchase_orders', {
+        ...readListQuery(req.query),
+        where: status ? { status } : {},
+      })
+    );
   } catch (err) {
     next(err);
   }

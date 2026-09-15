@@ -1,5 +1,5 @@
 const db = require('../db');
-const { listRows } = require('../lib/tables');
+const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, number, id, money } = require('../lib/validate');
 const { checkStockLevels } = require('../lib/messaging');
 
@@ -38,26 +38,43 @@ async function assertSkuFree(sku, excludeId) {
   if (rows.length) throw fail(`SKU "${sku}" is already used by another product`, 409);
 }
 
+// Stock status compares two columns, so it can't be a bound equality filter.
+// These are fixed fragments, never built from request input.
+const STOCK_FILTERS = {
+  low: 't.reorder_level > 0 AND t.stock_quantity > 0 AND t.stock_quantity <= t.reorder_level',
+  out: 't.stock_quantity <= 0',
+  in: 't.stock_quantity > 0',
+};
+
 exports.list = async (req, res, next) => {
   try {
-    const { search, sort, dir, limit, offset, category, stock } = req.query;
-    const result = await listRows('products', {
-      search, sort, dir, limit, offset,
-      where: category ? { category } : {},
-    });
+    const { category, stock, supplier_id } = req.query;
+    const where = {};
+    if (category) where.category = category;
+    if (supplier_id) where.supplier_id = supplier_id;
 
-    // Stock filtering is derived from two columns, so it cannot be expressed as
-    // a simple equality filter in listRows.
-    let rows = result.rows;
-    if (stock === 'low') {
-      rows = rows.filter((p) => p.reorder_level > 0 && p.stock_quantity <= p.reorder_level && p.stock_quantity > 0);
-    } else if (stock === 'out') {
-      rows = rows.filter((p) => p.stock_quantity <= 0);
-    } else if (stock === 'in') {
-      rows = rows.filter((p) => p.stock_quantity > 0);
-    }
+    res.json(
+      await listRows('products', {
+        ...readListQuery(req.query),
+        where,
+        // Filtering in SQL means the row count and paging stay correct; doing it
+        // in JS after the fact only filtered the current page.
+        extraConditions: STOCK_FILTERS[stock] ? [STOCK_FILTERS[stock]] : [],
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+};
 
-    res.json({ rows, total: stock ? rows.length : result.total });
+// Distinct categories, for the filter dropdown.
+exports.categories = async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT DISTINCT category FROM products
+       WHERE category IS NOT NULL AND category <> '' ORDER BY category`
+    );
+    res.json(rows.map((r) => r.category));
   } catch (err) {
     next(err);
   }

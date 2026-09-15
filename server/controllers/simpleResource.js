@@ -1,5 +1,5 @@
 const db = require('../db');
-const { listRows } = require('../lib/tables');
+const { listRows, readListQuery } = require('../lib/tables');
 const { fail } = require('../lib/validate');
 
 /**
@@ -16,9 +16,7 @@ function simpleResource({ table, label, parse }) {
   return {
     async list(req, res, next) {
       try {
-        const { search, sort, dir, limit, offset } = req.query;
-        const result = await listRows(table, { search, sort, dir, limit, offset });
-        res.json(result);
+        res.json(await listRows(table, readListQuery(req.query)));
       } catch (err) {
         next(err);
       }

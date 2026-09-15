@@ -1,20 +1,17 @@
 const db = require('../db');
-const { listRows } = require('../lib/tables');
+const { listRows, readListQuery } = require('../lib/tables');
 const { fail } = require('../lib/validate');
 const { sendQueued } = require('../lib/messaging');
 
 exports.list = async (req, res, next) => {
   try {
-    const { search, sort, dir, limit, offset, status } = req.query;
-    const result = await listRows('message_log', {
-      search,
-      sort,
-      dir,
-      limit,
-      offset,
-      where: status ? { status } : {},
-    });
-    res.json(result);
+    const { status } = req.query;
+    res.json(
+      await listRows('message_log', {
+        ...readListQuery(req.query),
+        where: status ? { status } : {},
+      })
+    );
   } catch (err) {
     next(err);
   }

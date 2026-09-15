@@ -1,5 +1,5 @@
 const db = require('../db');
-const { listRows } = require('../lib/tables');
+const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, number, oneOf, id, money } = require('../lib/validate');
 const { checkStockLevels, queueSaleConfirmation } = require('../lib/messaging');
 
@@ -22,25 +22,14 @@ async function loadSale(saleId, runner = db) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { search, sort, dir, limit, offset, payment_status } = req.query;
-    const result = await listRows('sales', {
-      search,
-      sort,
-      dir,
-      limit,
-      offset,
-      where: payment_status ? { payment_status } : {},
-    });
-
-    // Attach the customer name so the list is readable without a second call.
-    const { rows: customers } = await db.query('SELECT id, name FROM customers');
-    const nameById = new Map(customers.map((c) => [c.id, c.name]));
-    const rows = result.rows.map((sale) => ({
-      ...sale,
-      customer_name: sale.customer_id ? nameById.get(sale.customer_id) || null : null,
-    }));
-
-    res.json({ rows, total: result.total });
+    const { payment_status, from, to } = req.query;
+    res.json(
+      await listRows('sales', {
+        ...readListQuery(req.query),
+        where: payment_status ? { payment_status } : {},
+        ranges: [{ column: 'created_at', from, to: to ? `${to} 23:59:59` : undefined }],
+      })
+    );
   } catch (err) {
     next(err);
   }

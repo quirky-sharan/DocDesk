@@ -33,7 +33,8 @@ exports.table = async (req, res, next) => {
     const format = String(req.query.format || 'csv').toLowerCase();
     const { search, sort, dir } = req.query;
 
-    const { rows } = await listRows(table, { search, sort, dir });
+    // paginate:false - an export is the whole filtered set, not one page.
+    const { rows } = await listRows(table, { search, sort, dir, paginate: false });
     const columns = (await describeTable(table)).map((c) => c.name);
 
     const stamp = new Date().toISOString().slice(0, 10);
