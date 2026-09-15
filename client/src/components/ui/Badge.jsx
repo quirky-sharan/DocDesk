@@ -19,7 +19,7 @@ export default function Badge({ tone = 'slate', icon = false, dot = false, class
   const Icon = icon === true ? ICONS[tone] : icon || null;
   return (
     <span
-      className={cn('inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] font-medium capitalize leading-none', className)}
+      className={cn('inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[12px] font-medium leading-none', className)}
       style={{ background: colours.bg, color: colours.fg }}
     >
       {dot && <span className="h-1.5 w-1.5 rounded-full" style={{ background: colours.dot, boxShadow: `0 0 0 3px ${colours.bg}` }} />}
