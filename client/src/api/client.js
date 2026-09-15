@@ -42,6 +42,22 @@ function query(params = {}) {
 const send = (path, method, payload) =>
   request(path, { method, body: JSON.stringify(payload ?? {}) });
 
+// multipart: no Content-Type header, so the browser sets its own boundary.
+async function sendForm(path, formData, method = 'POST') {
+  let response;
+  try {
+    response = await fetch(`${BASE}${path}`, { method, body: formData });
+  } catch {
+    throw new Error(UNREACHABLE);
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (!body) throw new Error(UNREACHABLE);
+    throw new Error(body.error || `Upload failed (${response.status})`);
+  }
+  return body;
+}
+
 function resource(path) {
   return {
     list: (params) => request(`${path}${query(params)}`),
@@ -61,9 +77,15 @@ export const api = {
   products: {
     ...resource('/products'),
     summary: () => request('/products/summary'),
+    categories: () => request('/products/categories'),
     adjustStock: (id, change, reason) => send(`/products/${id}/stock`, 'POST', { change, reason }),
+    importPreview: (formData) => sendForm('/products/import/preview', formData),
+    importCommit: (formData) => sendForm('/products/import', formData),
   },
-  customers: resource('/customers'),
+  customers: {
+    ...resource('/customers'),
+    history: (id) => request(`/customers/${id}/history`),
+  },
   suppliers: resource('/suppliers'),
   sales: {
     ...resource('/sales'),
@@ -78,7 +100,28 @@ export const api = {
     send: () => request('/messages/send', { method: 'POST' }),
     remove: (id) => request(`/messages/${id}`, { method: 'DELETE' }),
   },
+  files: {
+    list: (params) => request(`/files${query(params)}`),
+    info: () => request('/files/info'),
+    upload: (formData) => sendForm('/files', formData),
+    update: (id, payload) => send(`/files/${id}`, 'PUT', payload),
+    remove: (id) => request(`/files/${id}`, { method: 'DELETE' }),
+  },
+  settings: {
+    get: () => request('/settings'),
+    update: (payload) => send('/settings', 'PUT', payload),
+  },
+  reports: {
+    summary: (params) => request(`/reports/summary${query(params)}`),
+    salesByDay: (params) => request(`/reports/sales-by-day${query(params)}`),
+    topProducts: (params) => request(`/reports/top-products${query(params)}`),
+    topCustomers: (params) => request(`/reports/top-customers${query(params)}`),
+  },
 };
+
+export function fileContentUrl(id, { download = false } = {}) {
+  return `${BASE}/files/${id}/content${download ? '?download=1' : ''}`;
+}
 
 // Downloads go through a plain link rather than fetch: the browser handles the
 // Content-Disposition filename and the save dialog for free, and the file never

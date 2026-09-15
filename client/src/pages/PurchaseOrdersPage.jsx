@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useList } from '../hooks/useList';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
-  ConfirmButton, ExportButtons, SearchInput,
+  ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
 
 const STATUS_TONE = {
@@ -10,47 +11,23 @@ const STATUS_TONE = {
 };
 
 export default function PurchaseOrdersPage() {
-  const [orders, setOrders] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('created_at');
-  const [dir, setDir] = useState('desc');
   const [creating, setCreating] = useState(false);
   const [receiving, setReceiving] = useState(null);
+  const [status, setStatus] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.purchaseOrders.list({ search, sort, dir });
-      setOrders(data.rows);
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, sort, dir]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
-
-  function toggleSort(key) {
-    if (sort === key) setDir(dir === 'asc' ? 'desc' : 'asc');
-    else {
-      setSort(key);
-      setDir('desc');
-    }
-  }
+  const fetcher = useCallback((params) => api.purchaseOrders.list(params), []);
+  const list = useList(fetcher, {
+    initialSort: 'created_at',
+    initialDir: 'desc',
+    filters: { status },
+  });
 
   async function remove(id) {
     try {
       await api.purchaseOrders.remove(id);
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     }
   }
 
@@ -75,34 +52,47 @@ export default function PurchaseOrdersPage() {
   return (
     <div>
       <PageHeader title="Incoming stock" subtitle="What you've ordered and what's arrived.">
-        <ExportButtons table="purchase_orders" params={{ search, sort, dir }} />
+        <ExportButtons table="purchase_orders" params={{ search: list.search, sort: list.sort, dir: list.dir }} />
         <button className="btn-primary" onClick={() => setCreating(true)}>New order</button>
       </PageHeader>
 
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
-      <div className="mb-4 flex items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search orders…" />
-        {loading && <span className="text-sm text-slate-400">Loading…</span>}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search orders or supplier…" />
+        <Select
+          value={status}
+          onChange={setStatus}
+          options={[['draft', 'Draft'], ['ordered', 'Ordered'], ['partial', 'Part arrived'],
+                    ['received', 'Received'], ['cancelled', 'Cancelled']]}
+          placeholder="Any status"
+        />
+        {(status || list.search) && (
+          <button className="btn-secondary" onClick={() => { setStatus(''); list.setSearch(''); }}>
+            Clear filters
+          </button>
+        )}
+        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
       </div>
 
       <Table
         columns={columns}
-        rows={orders}
-        sort={sort}
-        dir={dir}
-        onSort={toggleSort}
-        empty={search ? 'No orders match that.' : 'No orders yet.'}
+        rows={list.rows}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
+        empty={list.search || status ? 'No orders match that.' : 'No orders yet.'}
       />
+      <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
 
       {creating && (
-        <NewOrder onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await load(); }} />
+        <NewOrder onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await list.reload(); }} />
       )}
       {receiving && (
         <ReceiveOrder
           orderId={receiving}
           onClose={() => setReceiving(null)}
-          onDone={async () => { setReceiving(null); await load(); }}
+          onDone={async () => { setReceiving(null); await list.reload(); }}
         />
       )}
     </div>
@@ -119,7 +109,7 @@ function NewOrder({ onClose, onDone }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.products.list({ limit: 500 }), api.suppliers.list({ limit: 500 })])
+    Promise.all([api.products.list({ pageSize: 200 }), api.suppliers.list({ pageSize: 200 })])
       .then(([p, s]) => {
         setProducts(p.rows);
         setSuppliers(s.rows);

@@ -181,3 +181,60 @@ export function Table({ columns, rows, empty, onSort, sort, dir }) {
     </div>
   );
 }
+
+export function Pagination({ meta, page, onPage, loading }) {
+  if (meta.pageCount <= 1) {
+    return meta.total > 0 ? (
+      <p className="mt-3 text-sm text-slate-500">
+        {meta.total} {meta.total === 1 ? 'record' : 'records'}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-slate-500">
+        Page {meta.page} of {meta.pageCount} · {meta.total} records
+      </p>
+      <div className="flex gap-2">
+        <button
+          className="btn-secondary"
+          onClick={() => onPage(page - 1)}
+          disabled={loading || meta.page <= 1}
+        >
+          Previous
+        </button>
+        <button
+          className="btn-secondary"
+          onClick={() => onPage(page + 1)}
+          disabled={loading || meta.page >= meta.pageCount}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function Select({ value, onChange, options, placeholder }) {
+  return (
+    <select className="input-field max-w-[190px]" value={value} onChange={(e) => onChange(e.target.value)}>
+      {placeholder && <option value="">{placeholder}</option>}
+      {options.map((opt) => {
+        const [val, label] = Array.isArray(opt) ? opt : [opt, opt];
+        return (
+          <option key={val} value={val}>
+            {label}
+          </option>
+        );
+      })}
+    </select>
+  );
+}
+
+export function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}

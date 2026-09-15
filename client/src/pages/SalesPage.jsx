@@ -1,54 +1,33 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, receiptPdfUrl } from '../api/client';
+import { useList } from '../hooks/useList';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
-  ConfirmButton, ExportButtons, SearchInput,
+  ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
 
 const STATUS_TONE = { paid: 'green', unpaid: 'red', partial: 'amber', refunded: 'slate' };
 
 export default function SalesPage() {
-  const [sales, setSales] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('created_at');
-  const [dir, setDir] = useState('desc');
   const [creating, setCreating] = useState(false);
   const [viewing, setViewing] = useState(null);
+  const [status, setStatus] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.sales.list({ search, sort, dir });
-      setSales(data.rows);
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, sort, dir]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
-
-  function toggleSort(key) {
-    if (sort === key) setDir(dir === 'asc' ? 'desc' : 'asc');
-    else {
-      setSort(key);
-      setDir('desc');
-    }
-  }
+  const fetcher = useCallback((params) => api.sales.list(params), []);
+  const list = useList(fetcher, {
+    initialSort: 'created_at',
+    initialDir: 'desc',
+    filters: { payment_status: status, from, to },
+  });
 
   async function remove(id) {
     try {
       await api.sales.remove(id);
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     }
   }
 
@@ -76,32 +55,52 @@ export default function SalesPage() {
   return (
     <div>
       <PageHeader title="Sales" subtitle="Every sale, and the receipt for it.">
-        <ExportButtons table="sales" params={{ search, sort, dir }} />
+        <ExportButtons table="sales" params={{ search: list.search, sort: list.sort, dir: list.dir }} />
         <button className="btn-primary" onClick={() => setCreating(true)}>New sale</button>
       </PageHeader>
 
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
-      <div className="mb-4 flex items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search by receipt number…" />
-        {loading && <span className="text-sm text-slate-400">Loading…</span>}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search receipt or customer…" />
+        <Select
+          value={status}
+          onChange={setStatus}
+          options={[['paid', 'Paid'], ['unpaid', 'Unpaid'], ['partial', 'Part paid'], ['refunded', 'Refunded']]}
+          placeholder="Any payment"
+        />
+        <label className="flex items-center gap-2 text-sm text-slate-500">
+          From
+          <input type="date" className="input-field" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-500">
+          To
+          <input type="date" className="input-field" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        {(status || from || to || list.search) && (
+          <button className="btn-secondary" onClick={() => {
+            setStatus(''); setFrom(''); setTo(''); list.setSearch('');
+          }}>Clear filters</button>
+        )}
+        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
       </div>
 
       <Table
         columns={columns}
-        rows={sales}
-        sort={sort}
-        dir={dir}
-        onSort={toggleSort}
-        empty={search ? 'No sales match that.' : 'No sales yet. Record your first one.'}
+        rows={list.rows}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
+        empty={list.search || status || from || to ? 'No sales match that.' : 'No sales yet. Record your first one.'}
       />
+      <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
 
       {creating && (
         <NewSale
           onClose={() => setCreating(false)}
           onDone={async (sale) => {
             setCreating(false);
-            await load();
+            await list.reload();
             setViewing(sale.id);
           }}
         />
@@ -124,10 +123,17 @@ function NewSale({ onClose, onDone }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.products.list({ limit: 500 }), api.customers.list({ limit: 500 })])
-      .then(([p, c]) => {
+    Promise.all([
+      api.products.list({ pageSize: 200 }),
+      api.customers.list({ pageSize: 200 }),
+      api.settings.get(),
+    ])
+      .then(([p, c, s]) => {
         setProducts(p.rows);
         setCustomers(c.rows);
+        // Pre-fill the shop's usual tax rate; still editable per sale.
+        const rate = Number(s.values.default_tax_rate || 0);
+        if (rate > 0) setTaxRate(String(rate));
       })
       .catch((err) => setError(err.message));
   }, []);

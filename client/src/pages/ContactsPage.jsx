@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useList } from '../hooks/useList';
 import {
-  PageHeader, ErrorNote, Table, Modal, Field,
-  ConfirmButton, ExportButtons, SearchInput,
+  PageHeader, ErrorNote, Table, Modal, Field, Money,
+  ConfirmButton, ExportButtons, SearchInput, Pagination,
 } from '../components/ui';
 
 // Customers and suppliers differ only by one field and their labels, so they
@@ -28,48 +29,20 @@ export default function ContactsPage({ kind }) {
   const config = CONFIG[kind];
   const resource = config.resource();
 
-  const [rows, setRows] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('name');
-  const [dir, setDir] = useState('asc');
   const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await resource.list({ search, sort, dir });
-      setRows(data.rows);
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [resource, search, sort, dir]);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
-
-  function toggleSort(key) {
-    if (sort === key) setDir(dir === 'asc' ? 'desc' : 'asc');
-    else {
-      setSort(key);
-      setDir('asc');
-    }
-  }
+  const fetcher = useCallback((params) => resource.list(params), [resource]);
+  const list = useList(fetcher, { initialSort: 'name' });
 
   async function save(form) {
     try {
       if (form.id) await resource.update(form.id, form);
       else await resource.create(form);
       setEditing(null);
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
       throw err;
     }
   }
@@ -77,9 +50,9 @@ export default function ContactsPage({ kind }) {
   async function remove(id) {
     try {
       await resource.remove(id);
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     }
   }
 
@@ -90,6 +63,9 @@ export default function ContactsPage({ kind }) {
     { key: 'email', label: 'Email' },
     { key: 'actions', label: '', sortable: false, align: 'right', render: (r) => (
       <div className="flex justify-end gap-2">
+        {kind === 'customers' && (
+          <button className="btn-edit" onClick={() => setViewing(r)}>History</button>
+        )}
         <button className="btn-edit" onClick={() => setEditing(r)}>Edit</button>
         <ConfirmButton message={`Delete ${r.name}?`} onConfirm={() => remove(r.id)}>Delete</ConfirmButton>
       </div>
@@ -99,27 +75,30 @@ export default function ContactsPage({ kind }) {
   return (
     <div>
       <PageHeader title={config.title} subtitle={config.subtitle}>
-        <ExportButtons table={kind} params={{ search, sort, dir }} />
+        <ExportButtons table={kind} params={{ search: list.search, sort: list.sort, dir: list.dir }} />
         <button className="btn-primary" onClick={() => setEditing({ name: '' })}>
           Add {config.singular}
         </button>
       </PageHeader>
 
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
       <div className="mb-4 flex items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder={`Search ${config.title.toLowerCase()}…`} />
-        {loading && <span className="text-sm text-slate-400">Loading…</span>}
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder={`Search ${config.title.toLowerCase()}…`} />
+        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
       </div>
 
       <Table
         columns={columns}
-        rows={rows}
-        sort={sort}
-        dir={dir}
-        onSort={toggleSort}
-        empty={search ? 'Nothing matches that.' : `No ${config.title.toLowerCase()} yet.`}
+        rows={list.rows}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
+        empty={list.search ? 'Nothing matches that.' : `No ${config.title.toLowerCase()} yet.`}
       />
+      <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
+
+      {viewing && <HistoryModal customer={viewing} onClose={() => setViewing(null)} />}
 
       {editing && (
         <ContactForm
@@ -179,6 +158,64 @@ function ContactForm({ initial, singular, extraField, onSave, onClose }) {
           <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function HistoryModal({ customer, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.customers
+      .history(customer.id)
+      .then(setData)
+      .catch((err) => setError(err.message));
+  }, [customer.id]);
+
+  return (
+    <Modal title={`${customer.name} — history`} onClose={onClose} wide>
+      <ErrorNote error={error} />
+      {!data && !error && <p className="text-slate-500">Loading…</p>}
+      {data && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-200 p-4">
+              <p className="text-2xl font-semibold">{data.saleCount}</p>
+              <p className="text-sm text-slate-500">Purchases</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-4">
+              <p className="text-2xl font-semibold">{Number(data.totalSpent).toFixed(2)}</p>
+              <p className="text-sm text-slate-500">Total spent</p>
+            </div>
+          </div>
+
+          {data.favourites.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-slate-700">Buys most often</p>
+              <ul className="space-y-1 text-sm text-slate-600">
+                {data.favourites.map((f) => (
+                  <li key={f.name}>{f.name} — {f.quantity}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-slate-700">Purchases</p>
+            <Table
+              columns={[
+                { key: 'reference', label: 'Receipt' },
+                { key: 'created_at', label: 'When', render: (s) => new Date(s.created_at).toLocaleDateString() },
+                { key: 'payment_status', label: 'Payment' },
+                { key: 'total', label: 'Total', align: 'right', render: (s) => <Money value={s.total} /> },
+              ]}
+              rows={data.sales}
+              empty="Nothing bought yet."
+            />
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

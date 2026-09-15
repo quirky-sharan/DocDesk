@@ -6,6 +6,9 @@ import SalesPage from './pages/SalesPage';
 import ContactsPage from './pages/ContactsPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import MessagesPage from './pages/MessagesPage';
+import FilesPage from './pages/FilesPage';
+import ReportsPage from './pages/ReportsPage';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   return (
@@ -19,7 +22,10 @@ export default function App() {
           <Route path="/orders" element={<PurchaseOrdersPage />} />
           <Route path="/customers" element={<ContactsPage kind="customers" />} />
           <Route path="/suppliers" element={<ContactsPage kind="suppliers" />} />
+          <Route path="/files" element={<FilesPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

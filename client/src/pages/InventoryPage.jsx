@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { useList } from '../hooks/useList';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
-  ConfirmButton, ExportButtons, SearchInput,
+  ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
 
 const BLANK = {
   name: '', sku: '', category: '', unit: 'unit',
   cost_price: '', sale_price: '', stock_quantity: '', reorder_level: '', description: '',
 };
+
+const STOCK_FILTERS = [
+  ['in', 'In stock'],
+  ['low', 'Running low'],
+  ['out', 'Out of stock'],
+];
 
 function stockTone(product) {
   if (product.stock_quantity <= 0) return { tone: 'red', label: 'Out of stock' };
@@ -19,48 +26,29 @@ function stockTone(product) {
 }
 
 export default function InventoryPage() {
-  const [products, setProducts] = useState([]);
+  const [stock, setStock] = useState('');
+  const [category, setCategory] = useState('');
+  const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const [search, setSearch] = useState('');
-  const [stockFilter, setStockFilter] = useState('');
-  const [sort, setSort] = useState('name');
-  const [dir, setDir] = useState('asc');
-
   const [editing, setEditing] = useState(null);
   const [adjusting, setAdjusting] = useState(null);
+  const [importing, setImporting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [list, sum] = await Promise.all([
-        api.products.list({ search, sort, dir, stock: stockFilter }),
-        api.products.summary(),
-      ]);
-      setProducts(list.rows);
-      setSummary(sum);
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, sort, dir, stockFilter]);
+  const fetcher = useCallback((params) => api.products.list(params), []);
+  const list = useList(fetcher, { initialSort: 'name', filters: { stock, category } });
+
+  const refreshAside = useCallback(async () => {
+    const [sum, cats] = await Promise.all([api.products.summary(), api.products.categories()]);
+    setSummary(sum);
+    setCategories(cats);
+  }, []);
 
   useEffect(() => {
-    // Debounced so typing in the search box doesn't fire a request per keystroke.
-    const timer = setTimeout(load, 200);
-    return () => clearTimeout(timer);
-  }, [load]);
+    refreshAside().catch(() => {});
+  }, [refreshAside, list.meta.total]);
 
-  function toggleSort(key) {
-    if (sort === key) setDir(dir === 'asc' ? 'desc' : 'asc');
-    else {
-      setSort(key);
-      setDir('asc');
-    }
+  async function afterChange() {
+    await Promise.all([list.reload(), refreshAside()]);
   }
 
   async function save(form) {
@@ -68,9 +56,9 @@ export default function InventoryPage() {
       if (form.id) await api.products.update(form.id, form);
       else await api.products.create(form);
       setEditing(null);
-      await load();
+      await afterChange();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
       throw err;
     }
   }
@@ -78,9 +66,9 @@ export default function InventoryPage() {
   async function remove(id) {
     try {
       await api.products.remove(id);
-      await load();
+      await afterChange();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     }
   }
 
@@ -92,6 +80,7 @@ export default function InventoryPage() {
       </div>
     ) },
     { key: 'category', label: 'Category', render: (p) => p.category || '—' },
+    { key: 'supplier_name', label: 'Supplier', render: (p) => p.supplier_name || '—' },
     { key: 'stock_quantity', label: 'In stock', align: 'right', render: (p) => {
       const { tone, label } = stockTone(p);
       return (
@@ -101,7 +90,6 @@ export default function InventoryPage() {
         </div>
       );
     } },
-    { key: 'reorder_level', label: 'Reorder at', align: 'right' },
     { key: 'sale_price', label: 'Price', align: 'right', render: (p) => <Money value={p.sale_price} /> },
     { key: 'actions', label: '', sortable: false, align: 'right', render: (p) => (
       <div className="flex justify-end gap-2">
@@ -120,41 +108,49 @@ export default function InventoryPage() {
   return (
     <div>
       <PageHeader title="Inventory" subtitle="What you have, what's running out, what it's worth.">
-        <ExportButtons table="products" params={{ search, sort, dir }} />
+        <ExportButtons table="products" params={{ search: list.search, sort: list.sort, dir: list.dir }} />
+        <button className="btn-secondary" onClick={() => setImporting(true)}>Import from file</button>
         <button className="btn-primary" onClick={() => setEditing({ ...BLANK })}>Add product</button>
       </PageHeader>
 
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
       {summary && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Products" value={summary.total} onClick={() => setStockFilter('')} active={!stockFilter} />
+          <Stat label="Products" value={summary.total} onClick={() => setStock('')} active={!stock} />
           <Stat label="Low stock" value={summary.lowStock} tone="amber"
-                onClick={() => setStockFilter('low')} active={stockFilter === 'low'} />
+                onClick={() => setStock('low')} active={stock === 'low'} />
           <Stat label="Out of stock" value={summary.outOfStock} tone="red"
-                onClick={() => setStockFilter('out')} active={stockFilter === 'out'} />
+                onClick={() => setStock('out')} active={stock === 'out'} />
           <Stat label="Stock value" value={Number(summary.stockValue).toFixed(2)} />
         </div>
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search products…" />
-        {stockFilter && (
-          <button className="btn-secondary" onClick={() => setStockFilter('')}>
-            Clear filter
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search name, code, category…" />
+        <Select value={category} onChange={setCategory} options={categories} placeholder="All categories" />
+        <Select value={stock} onChange={setStock} options={STOCK_FILTERS} placeholder="Any stock level" />
+        {(stock || category || list.search) && (
+          <button className="btn-secondary" onClick={() => {
+            setStock('');
+            setCategory('');
+            list.setSearch('');
+          }}>
+            Clear filters
           </button>
         )}
-        {loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
       </div>
 
       <Table
         columns={columns}
-        rows={products}
-        sort={sort}
-        dir={dir}
-        onSort={toggleSort}
-        empty={search || stockFilter ? 'No products match that.' : 'No products yet. Add your first one.'}
+        rows={list.rows}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
+        empty={list.search || stock || category ? 'No products match that.' : 'No products yet. Add one, or import a spreadsheet.'}
       />
+      <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
 
       {editing && <ProductForm initial={editing} onSave={save} onClose={() => setEditing(null)} />}
       {adjusting && (
@@ -163,9 +159,18 @@ export default function InventoryPage() {
           onClose={() => setAdjusting(null)}
           onDone={async () => {
             setAdjusting(null);
-            await load();
+            await afterChange();
           }}
-          onError={setError}
+          onError={list.setError}
+        />
+      )}
+      {importing && (
+        <ImportModal
+          onClose={() => setImporting(false)}
+          onDone={async () => {
+            setImporting(false);
+            await afterChange();
+          }}
         />
       )}
     </div>
@@ -189,10 +194,163 @@ function Stat({ label, value, tone, onClick, active }) {
   );
 }
 
+function ImportModal({ onClose, onDone }) {
+  const [preview, setPreview] = useState(null);
+  const [file, setFile] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const inputRef = useRef(null);
+
+  async function choose(selected) {
+    if (!selected) return;
+    setFile(selected);
+    setPreview(null);
+    setError(null);
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append('file', selected);
+      setPreview(await api.products.importPreview(form));
+    } catch (err) {
+      setError(err.message);
+      setFile(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function commit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      setResult(await api.products.importCommit(form));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Import products from a spreadsheet" onClose={onClose} wide>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+      {result ? (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-800">
+            <p className="font-semibold">Import finished</p>
+            <p className="mt-1 text-sm">
+              {result.created} added, {result.updated} updated
+              {result.skipped ? `, ${result.skipped} skipped` : ''}.
+            </p>
+          </div>
+          {result.problems?.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Rows that were skipped</p>
+              <ul className="mt-2 space-y-1">
+                {result.problems.map((p) => (
+                  <li key={p.line}>Line {p.line}: {p.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button className="btn-primary" onClick={onDone}>Done</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Export your spreadsheet as a <strong>.csv</strong> file, then choose it here.
+            Column headings are matched automatically — "Price", "Rate" and "MRP" all work.
+            Products with a code you already use will be updated rather than duplicated.
+          </p>
+
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => choose(e.target.files?.[0])}
+          />
+          <button className="btn-secondary" onClick={() => inputRef.current?.click()} disabled={busy}>
+            {busy && !preview ? 'Reading…' : file ? `Chosen: ${file.name}` : 'Choose a CSV file'}
+          </button>
+
+          {preview && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-slate-200 p-4 text-sm">
+                <p className="font-medium">
+                  Found {preview.readyCount} product{preview.readyCount === 1 ? '' : 's'}
+                  {preview.problemCount > 0 && ` · ${preview.problemCount} row(s) will be skipped`}
+                </p>
+                <p className="mt-2 text-slate-500">
+                  Matched columns:{' '}
+                  {Object.entries(preview.detectedColumns)
+                    .map(([field, heading]) => `${heading} → ${field.replace(/_/g, ' ')}`)
+                    .join(', ')}
+                </p>
+                {preview.ignoredColumns.length > 0 && (
+                  <p className="mt-1 text-slate-400">
+                    Ignored: {preview.ignoredColumns.join(', ')}
+                  </p>
+                )}
+              </div>
+
+              {preview.sample.length > 0 && (
+                <Table
+                  columns={[
+                    { key: 'name', label: 'Name' },
+                    { key: 'sku', label: 'Code' },
+                    { key: 'sale_price', label: 'Price', align: 'right' },
+                    { key: 'stock_quantity', label: 'Stock', align: 'right' },
+                  ]}
+                  rows={preview.sample}
+                  empty="Nothing to preview."
+                />
+              )}
+
+              {preview.problems.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <p className="font-semibold">These rows will be skipped</p>
+                  <ul className="mt-2 space-y-1">
+                    {preview.problems.map((p) => (
+                      <li key={p.line}>Line {p.line}: {p.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button
+              className="btn-primary"
+              onClick={commit}
+              disabled={busy || !preview || preview.readyCount === 0}
+            >
+              {busy ? 'Importing…' : preview ? `Import ${preview.readyCount} products` : 'Import'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function ProductForm({ initial, onSave, onClose }) {
   const [form, setForm] = useState(initial);
+  const [suppliers, setSuppliers] = useState([]);
   const [busy, setBusy] = useState(false);
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
+  useEffect(() => {
+    api.suppliers.list({ pageSize: 200 }).then((d) => setSuppliers(d.rows)).catch(() => {});
+  }, []);
 
   async function submit(e) {
     e.preventDefault();
@@ -234,6 +392,14 @@ function ProductForm({ initial, onSave, onClose }) {
         </Field>
         <Field label="Unit" hint="box, kg, hour…">
           <input className="input-field" value={form.unit || ''} onChange={set('unit')} />
+        </Field>
+        <Field label="Supplier">
+          <select className="input-field" value={form.supplier_id || ''} onChange={set('supplier_id')}>
+            <option value="">— None —</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </Field>
         <div className="sm:col-span-2">
           <Field label="Description">

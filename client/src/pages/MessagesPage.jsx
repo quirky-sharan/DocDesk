@@ -1,32 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { PageHeader, ErrorNote, Table, Badge, ConfirmButton, ExportButtons } from '../components/ui';
+import { useList } from '../hooks/useList';
+import {
+  PageHeader, ErrorNote, Table, Badge, ConfirmButton, ExportButtons,
+  SearchInput, Select, Pagination,
+} from '../components/ui';
 
 const TONE = { queued: 'amber', sent: 'green', failed: 'red' };
 
 export default function MessagesPage() {
-  const [messages, setMessages] = useState([]);
-  const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const [queuedCount, setQueuedCount] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.messages.list({ sort: 'created_at', dir: 'desc' });
-      setMessages(data.rows);
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetcher = useCallback((params) => api.messages.list(params), []);
+  const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { status } });
 
+  // The send button needs the total waiting, not just what is on this page.
   useEffect(() => {
-    load();
-  }, [load]);
+    api.messages
+      .list({ status: 'queued', pageSize: 1 })
+      .then((d) => setQueuedCount(d.total))
+      .catch(() => {});
+  }, [list.rows]);
 
   async function sendAll() {
     setBusy(true);
@@ -38,9 +35,9 @@ export default function MessagesPage() {
           ? 'Nothing was waiting to be sent.'
           : `${result.sent} message${result.sent === 1 ? '' : 's'} marked as sent. Nothing actually left your computer — real sending is switched on later.`
       );
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     } finally {
       setBusy(false);
     }
@@ -49,13 +46,11 @@ export default function MessagesPage() {
   async function remove(id) {
     try {
       await api.messages.remove(id);
-      await load();
+      await list.reload();
     } catch (err) {
-      setError(err.message);
+      list.setError(err.message);
     }
   }
-
-  const queued = messages.filter((m) => m.status === 'queued').length;
 
   const columns = [
     { key: 'status', label: 'Status', render: (m) => <Badge tone={TONE[m.status] || 'slate'}>{m.status}</Badge> },
@@ -77,12 +72,12 @@ export default function MessagesPage() {
     <div>
       <PageHeader title="Messages" subtitle="Alerts DocDesk raised on its own.">
         <ExportButtons table="message_log" />
-        <button className="btn-primary" onClick={sendAll} disabled={busy || queued === 0}>
-          {busy ? 'Sending…' : `Send ${queued || ''} waiting`.trim()}
+        <button className="btn-primary" onClick={sendAll} disabled={busy || queuedCount === 0}>
+          {busy ? 'Sending…' : queuedCount ? `Send ${queuedCount} waiting` : 'Nothing waiting'}
         </button>
       </PageHeader>
 
-      <ErrorNote error={error} onDismiss={() => setError(null)} />
+      <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
       <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-semibold">Sending is not switched on yet</p>
@@ -99,13 +94,26 @@ export default function MessagesPage() {
         </div>
       )}
 
-      {loading && <p className="mb-2 text-sm text-slate-400">Loading…</p>}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search messages…" />
+        <Select
+          value={status}
+          onChange={setStatus}
+          options={[['queued', 'Waiting'], ['sent', 'Sent'], ['failed', 'Failed']]}
+          placeholder="Any status"
+        />
+        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+      </div>
 
       <Table
         columns={columns}
-        rows={messages}
+        rows={list.rows}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
         empty="No messages yet. Sell something or let stock run low, and alerts show up here."
       />
+      <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
     </div>
   );
 }
