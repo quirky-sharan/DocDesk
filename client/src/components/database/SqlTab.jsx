@@ -222,7 +222,7 @@ export default function SqlTab({ initialSql, capabilities }) {
         {!result && !plan && !error && (
           <div className="rounded-[22px] px-6 py-10 text-center" style={{ boxShadow: 'inset 0 0 0 1.5px var(--line)', background: 'var(--wash)' }}>
             <Sparkles size={22} className="mx-auto mb-2 text-ink-3" />
-            <p className="text-[14px] font-medium">Write a query, or pick an example on the right</p>
+            <p className="text-[14px] font-medium">Write a query, or start from one of the examples</p>
             <p className="mt-1 text-[13px] text-ink-2">Results appear here. Explain shows how PostgreSQL plans to run it, step by step.</p>
           </div>
         )}

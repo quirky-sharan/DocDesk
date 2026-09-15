@@ -69,40 +69,37 @@ export default function Spotlight({ initialQuery = '', onClose }) {
     let cancelled = false;
     setRecords((r) => ({ ...r, loading: true }));
     const timer = setTimeout(async () => {
-      const safe = (promise) => promise.then((d) => d.rows || []).catch(() => []);
-      const [products, customers, suppliers, sales] = await Promise.all([
-        safe(api.products.list({ search: q, pageSize: 4 })),
-        safe(api.customers.list({ search: q, pageSize: 3 })),
-        safe(api.suppliers.list({ search: q, pageSize: 2 })),
-        safe(api.sales.list({ search: q, pageSize: 3 })),
-      ]);
+      // One request, ranked by trigram similarity in PostgreSQL - so "balpoint"
+      // still finds "Ballpoint Pen" and the closest names come first.
+      const found = await api.search(q, 4).then((d) => d.results || []).catch(() => []);
       if (cancelled) return;
+      const of = (kind, max) => found.filter((r) => r.kind === kind).slice(0, max);
       setRecords({
         loading: false,
         items: [
-          ...products.map((p) => ({
-            id: `product-${p.id}`, group: 'Products', label: p.name, icon: Package,
-            meta: `${p.sku ? `${p.sku} · ` : ''}${p.stock_quantity} in stock · ${money(p.sale_price)}`,
+          ...of('product', 4).map((p) => ({
+            id: `product-${p.id}`, group: 'Products', label: p.title, icon: Package,
+            meta: `${p.subtitle}${p.amount !== null ? ` · ${money(p.amount)}` : ''}`,
             run: () => navigate(`/inventory?view=${p.id}`),
           })),
-          ...customers.map((c) => ({
-            id: `customer-${c.id}`, group: 'Customers', label: c.name, avatar: c.name,
-            meta: [c.phone, c.email].filter(Boolean).join(' · ') || 'Customer',
+          ...of('customer', 3).map((c) => ({
+            id: `customer-${c.id}`, group: 'Customers', label: c.title, avatar: c.title,
+            meta: c.subtitle || 'Customer',
             run: () => navigate(`/customers?history=${c.id}`),
           })),
-          ...suppliers.map((s) => ({
-            id: `supplier-${s.id}`, group: 'Suppliers', label: s.name, icon: Building2,
-            meta: [s.contact_name, s.phone].filter(Boolean).join(' · ') || 'Supplier',
-            run: () => navigate(`/suppliers?search=${encodeURIComponent(s.name)}`),
+          ...of('supplier', 2).map((s) => ({
+            id: `supplier-${s.id}`, group: 'Suppliers', label: s.title, icon: Building2,
+            meta: s.subtitle || 'Supplier',
+            run: () => navigate(`/suppliers?search=${encodeURIComponent(s.title)}`),
           })),
-          ...sales.map((s) => ({
-            id: `sale-${s.id}`, group: 'Sales', label: s.reference, icon: Receipt,
-            meta: `${s.customer_name || 'Walk-in'} · ${money(s.total)} · ${s.payment_status}`,
+          ...of('sale', 3).map((s) => ({
+            id: `sale-${s.id}`, group: 'Sales', label: s.title, icon: Receipt,
+            meta: `${s.subtitle} · ${money(s.amount)}`,
             run: () => navigate(`/sales?receipt=${s.id}`),
           })),
         ],
       });
-    }, 180);
+    }, 160);
     return () => {
       cancelled = true;
       clearTimeout(timer);

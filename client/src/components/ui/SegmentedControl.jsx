@@ -32,7 +32,7 @@ export default function SegmentedControl({ value, onChange, options, size = 'md'
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn('relative inline-flex max-w-full items-center overflow-x-auto rounded-full p-[3px]', className)}
+      className={cn('scrollbar-none relative inline-flex max-w-full items-center overflow-x-auto rounded-full p-[3px]', className)}
       style={{ background: 'var(--wash-strong)', boxShadow: 'inset 0 0 0 1px var(--line)' }}
     >
       {items.map((item, index) => {

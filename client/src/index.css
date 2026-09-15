@@ -340,6 +340,13 @@
   *::-webkit-scrollbar-track {
     background: transparent;
   }
+  /* Rows of chips and tabs scroll sideways by swipe or trackpad; a bar under them is noise. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 
   input[type='number']::-webkit-inner-spin-button,
   input[type='number']::-webkit-outer-spin-button {
