@@ -132,7 +132,8 @@ export default function DashboardPage() {
                     ))}
                   </ul>
                   <p className="mt-3 text-sm text-slate-500">
-                    Last {sales.length} sales total <strong>{salesTotal.toFixed(2)}</strong>.
+                    {sales.length === 1 ? 'That sale came to ' : `Those ${sales.length} sales come to `}
+                    <strong>{salesTotal.toFixed(2)}</strong>.
                   </p>
                 </>
               )}
