@@ -49,7 +49,7 @@ export default function ReportsPage() {
       </PageHeader>
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
-      {loading && <p className="mb-4 text-sm text-slate-400">Loading…</p>}
+      {loading && <p className="mb-4 text-sm subtle">Loading…</p>}
 
       {data && (
         <>
@@ -65,7 +65,7 @@ export default function ReportsPage() {
           </div>
 
           {data.summary.outstanding.count > 0 && (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="mb-6 rounded-lg border border-warning bg-warning-soft p-4 text-sm text-warning">
               <strong>{data.summary.outstanding.count}</strong> sale
               {data.summary.outstanding.count === 1 ? '' : 's'} still unpaid, totalling{' '}
               <strong>{Number(data.summary.outstanding.amount).toFixed(2)}</strong>.
@@ -76,7 +76,7 @@ export default function ReportsPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Revenue per day</h2>
-                <p className="text-sm text-slate-500">{data.summary.from} to {data.summary.to}</p>
+                <p className="text-sm muted">{data.summary.from} to {data.summary.to}</p>
               </div>
               {/* A table view alongside the chart, so the numbers are readable
                   without relying on hover or on seeing colour. */}
@@ -105,13 +105,13 @@ export default function ReportsPage() {
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <section className="card">
               <h2 className="mb-1 text-lg font-semibold">Revenue by category</h2>
-              <p className="mb-4 text-sm text-slate-500">Where the money actually comes from.</p>
+              <p className="mb-4 text-sm muted">Where the money actually comes from.</p>
               <HorizontalBars rows={data.categories} labelKey="category" valueKey="revenue" />
             </section>
 
             <section className="card">
               <h2 className="mb-1 text-lg font-semibold">How people paid</h2>
-              <p className="mb-4 text-sm text-slate-500">Share of revenue in this period.</p>
+              <p className="mb-4 text-sm muted">Share of revenue in this period.</p>
               <ShareBar rows={data.payments} labelKey="method" valueKey="revenue" />
             </section>
           </div>
@@ -147,7 +147,7 @@ export default function ReportsPage() {
 
           <section className="card">
             <h2 className="mb-1 text-lg font-semibold">What your stock is worth</h2>
-            <p className="mb-4 text-sm text-slate-500">
+            <p className="mb-4 text-sm muted">
               At cost price, by category. This is current stock, not the period above.
             </p>
             <HorizontalBars
@@ -168,7 +168,7 @@ export default function ReportsPage() {
             />
           </section>
 
-          <p className="mt-6 text-xs text-slate-400">
+          <p className="mt-6 text-xs subtle">
             Profit is an estimate: it uses each product's current cost price, so changing a
             cost also changes past figures.
           </p>
@@ -179,11 +179,11 @@ export default function ReportsPage() {
 }
 
 function Stat({ label, value, tone }) {
-  const toneClass = tone === 'green' ? 'text-green-600' : tone === 'red' ? 'text-red-600' : '';
+  const toneClass = tone === 'green' ? 'text-success' : tone === 'red' ? 'text-danger' : '';
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-lg border border-token bg-surface p-4">
       <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
-      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-sm muted">{label}</p>
     </div>
   );
 }

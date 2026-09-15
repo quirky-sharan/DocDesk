@@ -85,7 +85,7 @@ export default function ContactsPage({ kind }) {
 
       <div className="mb-4 flex items-center gap-3">
         <SearchInput value={list.search} onChange={list.setSearch} placeholder={`Search ${config.title.toLowerCase()}…`} />
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table
@@ -176,24 +176,24 @@ function HistoryModal({ customer, onClose }) {
   return (
     <Modal title={`${customer.name} — history`} onClose={onClose} wide>
       <ErrorNote error={error} />
-      {!data && !error && <p className="text-slate-500">Loading…</p>}
+      {!data && !error && <p className="muted">Loading…</p>}
       {data && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-200 p-4">
+            <div className="rounded-lg border border-token p-4">
               <p className="text-2xl font-semibold">{data.saleCount}</p>
-              <p className="text-sm text-slate-500">Purchases</p>
+              <p className="text-sm muted">Purchases</p>
             </div>
-            <div className="rounded-lg border border-slate-200 p-4">
+            <div className="rounded-lg border border-token p-4">
               <p className="text-2xl font-semibold">{Number(data.totalSpent).toFixed(2)}</p>
-              <p className="text-sm text-slate-500">Total spent</p>
+              <p className="text-sm muted">Total spent</p>
             </div>
           </div>
 
           {data.favourites.length > 0 && (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">Buys most often</p>
-              <ul className="space-y-1 text-sm text-slate-600">
+              <p className="mb-2 text-sm font-medium">Buys most often</p>
+              <ul className="space-y-1 text-sm muted">
                 {data.favourites.map((f) => (
                   <li key={f.name}>{f.name} — {f.quantity}</li>
                 ))}
@@ -202,7 +202,7 @@ function HistoryModal({ customer, onClose }) {
           )}
 
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-700">Purchases</p>
+            <p className="mb-2 text-sm font-medium">Purchases</p>
             <Table
               columns={[
                 { key: 'reference', label: 'Receipt' },

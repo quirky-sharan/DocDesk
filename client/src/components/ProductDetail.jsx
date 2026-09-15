@@ -24,7 +24,7 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
   return (
     <Modal title={product?.name || 'Product'} onClose={onClose} wide>
       <ErrorNote error={error} />
-      {!data && !error && <p className="text-slate-500">Loading…</p>}
+      {!data && !error && <p className="muted">Loading…</p>}
 
       {data && (
         <div className="space-y-6">
@@ -47,10 +47,10 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
           </div>
 
           {data.trend.length > 1 && (
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="mb-2 text-sm font-medium text-slate-700">Units sold per day</p>
+            <div className="rounded-lg border border-token p-4">
+              <p className="mb-2 text-sm font-medium">Units sold per day</p>
               <Sparkline values={data.trend.map((t) => t.units)} width={560} height={48} />
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs subtle">
                 {data.trend[0].day} to {data.trend.at(-1).day}
               </p>
             </div>
@@ -58,7 +58,7 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
 
           {data.incoming.length > 0 && (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">On its way</p>
+              <p className="mb-2 text-sm font-medium">On its way</p>
               <Table
                 columns={[
                   { key: 'reference', label: 'Order' },
@@ -78,7 +78,7 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
           )}
 
           <div>
-            <p className="mb-2 text-sm font-medium text-slate-700">Recent sales</p>
+            <p className="mb-2 text-sm font-medium">Recent sales</p>
             <Table
               columns={[
                 { key: 'reference', label: 'Receipt' },
@@ -93,11 +93,11 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
 
           {data.files.length > 0 && (
             <div>
-              <p className="mb-2 text-sm font-medium text-slate-700">Attached files</p>
+              <p className="mb-2 text-sm font-medium">Attached files</p>
               <ul className="space-y-1 text-sm">
                 {data.files.map((f) => (
                   <li key={f.id}>
-                    <a className="text-blue-600 hover:underline" href={fileContentUrl(f.id)}>
+                    <a className="link hover:underline" href={fileContentUrl(f.id)}>
                       {f.original_name}
                     </a>
                   </li>
@@ -113,10 +113,10 @@ export default function ProductDetail({ productId, onClose, onEdit }) {
 
 function Figure({ label, value, meta }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div className="rounded-lg border border-token p-3">
       <p className="text-xl font-semibold">{value}</p>
-      <p className="text-sm text-slate-500">{label}</p>
-      {meta && <p className="mt-1 text-xs text-slate-400">{meta}</p>}
+      <p className="text-sm muted">{label}</p>
+      {meta && <p className="mt-1 text-xs subtle">{meta}</p>}
     </div>
   );
 }

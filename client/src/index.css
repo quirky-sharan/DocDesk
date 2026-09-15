@@ -2,50 +2,387 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Chart palette. Slots are assigned in fixed order and never cycled; a 5th
-   category folds into "Other". Validated for the light surface: worst adjacent
-   CVD dE 9.1, normal-vision 22.9. Three slots sit under 3:1 contrast, so every
-   chart using them ships visible labels or a legend. Dark steps land in Phase 3. */
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Every colour in the app resolves through these, so dark mode is a value swap
+   rather than a second set of classes. Dark is declared under both a media
+   query (the OS setting) and a [data-theme] scope (the in-app toggle), with the
+   toggle winning in both directions.
+
+   The chart series are not a flip of the light values - they are the same hues
+   re-stepped for the dark surface, and both sets were run through a CVD
+   validator. See memory.md.
+--------------------------------------------------------------------------- */
 :root {
-  --chart-surface: #fcfcfb;
-  --chart-grid: #e7e5e4;
-  --chart-axis: #a8a29e;
+  color-scheme: light;
+
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-sunken: #f2f2ef;
+  --surface-hover: #f7f7f5;
+
+  --border: #e5e4e0;
+  --border-strong: #d6d5d0;
+
+  --text: #18181b;
+  --text-muted: #6b6a66;
+  --text-subtle: #9a9894;
+
+  --accent: #2a78d6;
+  --accent-hover: #2166b8;
+  --accent-soft: #eaf2fd;
+  --accent-text: #1d5aa8;
+
+  --danger: #c0392f;
+  --danger-soft: #fdeceb;
+  --success: #1a7f4b;
+  --success-soft: #e8f6ee;
+  --warning: #9a6508;
+  --warning-soft: #fdf3e2;
+
+  --sidebar-bg: #1c1c1a;
+  --sidebar-text: #b5b4ae;
+  --sidebar-text-active: #ffffff;
+  --sidebar-hover: #2a2a27;
+  --sidebar-active: #343431;
+  --sidebar-border: #2e2e2b;
+
+  --chart-surface: #ffffff;
+  --chart-grid: #eceae6;
+  --chart-axis: #a8a6a1;
+  --chart-track: #eeedea;
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
   --series-4: #eda100;
   --series-other: #78716c;
+
+  --shadow-sm: 0 1px 2px rgb(16 15 14 / 0.04), 0 1px 1px rgb(16 15 14 / 0.03);
+  --shadow-md: 0 4px 12px -2px rgb(16 15 14 / 0.07), 0 2px 4px -2px rgb(16 15 14 / 0.05);
+  --shadow-lg: 0 16px 40px -8px rgb(16 15 14 / 0.16), 0 4px 12px -4px rgb(16 15 14 / 0.08);
+  --ring: 0 0 0 3px rgb(42 120 214 / 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+
+    --bg: #131312;
+    --surface: #1c1c1a;
+    --surface-sunken: #171716;
+    --surface-hover: #232321;
+
+    --border: #2e2e2b;
+    --border-strong: #3d3d39;
+
+    --text: #f4f3f0;
+    --text-muted: #a5a39d;
+    --text-subtle: #7a7873;
+
+    --accent: #4f96ea;
+    --accent-hover: #6aa8ef;
+    --accent-soft: #17263a;
+    --accent-text: #8fbdf3;
+
+    --danger: #e5706a;
+    --danger-soft: #35201f;
+    --success: #4cb583;
+    --success-soft: #16291f;
+    --warning: #d9a441;
+    --warning-soft: #302516;
+
+    --sidebar-bg: #0f0f0e;
+    --sidebar-text: #8d8b86;
+    --sidebar-text-active: #ffffff;
+    --sidebar-hover: #1c1c1a;
+    --sidebar-active: #2a2a27;
+    --sidebar-border: #232321;
+
+    --chart-surface: #1c1c1a;
+    --chart-grid: #2b2b28;
+    --chart-axis: #55534f;
+    --chart-track: #2b2b28;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-other: #8a8781;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+    --ring: 0 0 0 3px rgb(79 150 234 / 0.28);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #131312;
+  --surface: #1c1c1a;
+  --surface-sunken: #171716;
+  --surface-hover: #232321;
+
+  --border: #2e2e2b;
+  --border-strong: #3d3d39;
+
+  --text: #f4f3f0;
+  --text-muted: #a5a39d;
+  --text-subtle: #7a7873;
+
+  --accent: #4f96ea;
+  --accent-hover: #6aa8ef;
+  --accent-soft: #17263a;
+  --accent-text: #8fbdf3;
+
+  --danger: #e5706a;
+  --danger-soft: #35201f;
+  --success: #4cb583;
+  --success-soft: #16291f;
+  --warning: #d9a441;
+  --warning-soft: #302516;
+
+  --sidebar-bg: #0f0f0e;
+  --sidebar-text: #8d8b86;
+  --sidebar-text-active: #ffffff;
+  --sidebar-hover: #1c1c1a;
+  --sidebar-active: #2a2a27;
+  --sidebar-border: #232321;
+
+  --chart-surface: #1c1c1a;
+  --chart-grid: #2b2b28;
+  --chart-axis: #55534f;
+  --chart-track: #2b2b28;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-other: #8a8781;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  --ring: 0 0 0 3px rgb(79 150 234 / 0.28);
 }
 
 @layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply antialiased bg-slate-50;
+    background: var(--bg);
+    color: var(--text);
+    /* Tabular figures everywhere: money in a column should line up. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One transition rule rather than per-component, so switching theme is a
+     single smooth change instead of a dozen slightly different ones. */
+  body,
+  aside,
+  header,
+  .card,
+  .panel,
+  .input-field,
+  table,
+  th,
+  td {
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+    border-radius: 8px;
+  }
+
+  /* Scrollbars that recede instead of announcing themselves. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 99px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
 @layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease,
+      transform 120ms ease, box-shadow 150ms ease;
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.975);
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+
   .btn-primary {
-    @apply bg-gradient-to-r from-teal-500 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-teal-600 hover:to-blue-700 transition-all shadow-md active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+    @apply btn;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: var(--shadow-sm);
   }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
   .btn-secondary {
-    @apply bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+    @apply btn;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
   }
-  .btn-danger {
-    @apply bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 transition-all active:scale-95 text-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100;
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
   }
+
+  .btn-ghost {
+    @apply btn;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  /* Row actions: quieter and smaller than page-level buttons, so a table full
+     of them doesn't read as a wall of controls. */
   .btn-edit {
-    @apply bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-all active:scale-95 text-sm;
+    @apply inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium;
+    color: var(--text-muted);
+    transition: background-color 150ms ease, color 150ms ease;
   }
+  .btn-edit:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+  .btn-edit:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium;
+    color: var(--danger);
+    transition: background-color 150ms ease;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--danger-soft);
+  }
+  .btn-danger:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+
   .input-field {
-    @apply w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all;
+    @apply w-full rounded-lg px-3 py-2 text-sm outline-none;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
   }
+  .input-field::placeholder {
+    color: var(--text-subtle);
+  }
+  .input-field:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: var(--ring);
+  }
+
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-slate-100 p-6;
+    @apply rounded-xl p-6;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
   }
+
+  .panel {
+    @apply rounded-xl;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+
   .table-header {
-    @apply px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 bg-slate-50/50;
+    @apply px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider;
+    color: var(--text-subtle);
+    background: var(--surface-sunken);
+    border-bottom: 1px solid var(--border);
   }
+
   .table-cell {
-    @apply px-6 py-4 whitespace-nowrap border-b border-slate-100 text-sm text-slate-700;
+    @apply px-5 py-3.5 text-sm;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
   }
+
+  .muted {
+    color: var(--text-muted);
+  }
+  .subtle {
+    color: var(--text-subtle);
+  }
+}
+
+/* Token-backed utilities. These exist so page markup can stay as class names
+   while every colour still resolves from the variables above. */
+@layer components {
+  .bg-surface   { background: var(--surface); }
+  .bg-sunken    { background: var(--surface-sunken); }
+  .hover\:bg-hover:hover { background: var(--surface-hover); }
+
+  .border-token        { border-color: var(--border); }
+  .border-token-strong { border-color: var(--border-strong); }
+  .hover\:border-token-strong:hover { border-color: var(--border-strong); }
+
+  .link { color: var(--accent); }
+  .text-accent  { color: var(--accent-text); }
+  .text-success { color: var(--success); }
+  .text-danger  { color: var(--danger); }
+  .text-warning { color: var(--warning); }
+
+  .bg-accent-soft  { background: var(--accent-soft); }
+  .bg-success-soft { background: var(--success-soft); }
+  .bg-warning-soft { background: var(--warning-soft); }
+  .bg-danger-soft  { background: var(--danger-soft); }
+
+  .bg-success-solid { background: var(--success); }
+  .bg-danger-solid  { background: var(--danger); }
+
+  .border-accent  { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .border-success { border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+  .border-warning { border-color: color-mix(in srgb, var(--warning) 35%, transparent); }
+  .border-danger  { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 }

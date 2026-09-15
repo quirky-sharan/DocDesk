@@ -33,33 +33,54 @@ const GROUPS = [
 
 export default function Sidebar() {
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col bg-slate-900 text-white">
-      <div className="border-b border-slate-800 p-6">
-        <h1 className="text-xl font-bold">DocDesk</h1>
-        <p className="mt-1 text-sm text-slate-400">Front desk &amp; inventory</p>
+    <aside
+      className="flex h-full w-[15rem] shrink-0 flex-col"
+      style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)' }}
+    >
+      <div className="px-6 py-6">
+        <h1
+          className="text-lg font-semibold tracking-[-0.01em]"
+          style={{ color: 'var(--sidebar-text-active)' }}
+        >
+          DocDesk
+        </h1>
+        <p className="mt-0.5 text-xs" style={{ color: 'var(--sidebar-text)' }}>
+          Front desk &amp; inventory
+        </p>
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-6">
         {GROUPS.map((group, i) => (
           <div key={i}>
             {group.label && (
-              <p className="px-4 pb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <p
+                className="px-3 pb-2 text-[0.68rem] font-semibold uppercase tracking-[0.08em]"
+                style={{ color: 'var(--sidebar-text)', opacity: 0.6 }}
+              >
                 {group.label}
               </p>
             )}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {group.items.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.path === '/'}
-                  className={({ isActive }) =>
-                    `block rounded-lg px-4 py-2 text-sm transition-colors ${
-                      isActive ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-800'
-                    }`
-                  }
-                >
-                  {item.name}
+                <NavLink key={item.path} to={item.path} end={item.path === '/'}>
+                  {({ isActive }) => (
+                    <span
+                      className="block rounded-lg px-3 py-2 text-sm transition-colors"
+                      style={{
+                        background: isActive ? 'var(--sidebar-active)' : 'transparent',
+                        color: isActive ? 'var(--sidebar-text-active)' : 'var(--sidebar-text)',
+                        fontWeight: isActive ? 500 : 400,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) e.currentTarget.style.background = 'var(--sidebar-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      {item.name}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

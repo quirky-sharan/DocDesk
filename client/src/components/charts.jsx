@@ -93,7 +93,7 @@ export function AreaChart({ series, height = 220, valueKey = 'revenue', labelKey
             <line x1={pad.left} x2={width - pad.right} y1={t.y} y2={t.y}
                   stroke="var(--chart-grid)" strokeWidth="1" />
             <text x={pad.left - 8} y={t.y + 4} textAnchor="end"
-                  className="fill-slate-400" style={{ fontSize: 10 }}>
+                  style={{ fontSize: 10, fill: 'var(--chart-axis)' }}>
               {formatCompact(t.value)}
             </text>
           </g>
@@ -115,11 +115,11 @@ export function AreaChart({ series, height = 220, valueKey = 'revenue', labelKey
 
         {points.length > 1 && (
           <>
-            <text x={pad.left} y={height - 8} className="fill-slate-400" style={{ fontSize: 10 }}>
+            <text x={pad.left} y={height - 8} style={{ fontSize: 10, fill: 'var(--chart-axis)' }}>
               {points[0][labelKey]}
             </text>
             <text x={width - pad.right} y={height - 8} textAnchor="end"
-                  className="fill-slate-400" style={{ fontSize: 10 }}>
+                  style={{ fontSize: 10, fill: 'var(--chart-axis)' }}>
               {points.at(-1)[labelKey]}
             </text>
           </>
@@ -128,11 +128,17 @@ export function AreaChart({ series, height = 220, valueKey = 'revenue', labelKey
 
       {hover && (
         <div
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow-lg"
-          style={{ left: `${(hover.x / width) * 100}%`, top: `${(hover.y / height) * 100}%` }}
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-lg px-2.5 py-1.5 text-xs"
+          style={{
+            left: `${(hover.x / width) * 100}%`,
+            top: `${(hover.y / height) * 100}%`,
+            background: 'var(--text)',
+            color: 'var(--surface)',
+            boxShadow: 'var(--shadow-md)',
+          }}
         >
           <div className="font-medium">{hover[labelKey]}</div>
-          <div className="text-slate-300">{format(hover[valueKey])}</div>
+          <div style={{ opacity: 0.75 }}>{format(hover[valueKey])}</div>
         </div>
       )}
     </div>
@@ -156,10 +162,11 @@ export function HorizontalBars({ rows, labelKey = 'label', valueKey = 'value', f
         return (
           <li key={row[labelKey] ?? i}>
             <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate text-slate-700">{row[labelKey]}</span>
-              <span className="shrink-0 font-medium text-slate-900">{format(value)}</span>
+              <span className="truncate">{row[labelKey]}</span>
+              <span className="shrink-0 font-medium">{format(value)}</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+            <div className="h-2 w-full overflow-hidden rounded-full"
+              style={{ background: 'var(--chart-track)' }}>
               <div
                 className="h-full rounded-full transition-[width] duration-500"
                 style={{ width: `${Math.max(pct, 1.5)}%`, background: color }}
@@ -228,8 +235,8 @@ export function ShareBar({ rows, labelKey = 'label', valueKey = 'value', formatV
                 className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                 style={{ background: i < 4 ? seriesColor(i) : OTHER_COLOR }}
               />
-              <span className="truncate capitalize text-slate-600">{seg[labelKey]}</span>
-              <span className="ml-auto shrink-0 font-medium text-slate-900">{pct.toFixed(0)}%</span>
+              <span className="truncate capitalize muted">{seg[labelKey]}</span>
+              <span className="ml-auto shrink-0 font-medium">{pct.toFixed(0)}%</span>
             </li>
           );
         })}
@@ -259,7 +266,7 @@ export function Sparkline({ values, width = 120, height = 32, tone = 'var(--seri
 
 function Empty() {
   return (
-    <div className="flex h-32 items-center justify-center text-sm text-slate-400">
+    <div className="flex h-32 items-center justify-center text-sm subtle">
       Not enough data to chart yet.
     </div>
   );

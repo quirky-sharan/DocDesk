@@ -6,6 +6,16 @@
     <title>DocDesk</title>
   </head>
   <body>
+    <script>
+      // Applied before React renders, so a dark-mode user never sees a white
+      // flash on load. Mirrors the logic in hooks/useTheme.js.
+      try {
+        var saved = localStorage.getItem('docdesk_theme');
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      } catch (e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

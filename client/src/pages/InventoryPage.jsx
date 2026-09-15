@@ -77,8 +77,8 @@ export default function InventoryPage() {
   const columns = [
     { key: 'name', label: 'Product', render: (p) => (
       <button type="button" className="text-left" onClick={() => setViewing(p.id)}>
-        <div className="font-medium text-blue-700 hover:underline">{p.name}</div>
-        {p.sku && <div className="text-xs text-slate-400">{p.sku}</div>}
+        <div className="font-medium link hover:underline">{p.name}</div>
+        {p.sku && <div className="text-xs subtle">{p.sku}</div>}
       </button>
     ) },
     { key: 'category', label: 'Category', render: (p) => p.category || '—' },
@@ -141,7 +141,7 @@ export default function InventoryPage() {
             Clear filters
           </button>
         )}
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table
@@ -190,18 +190,18 @@ export default function InventoryPage() {
 }
 
 function Stat({ label, value, tone, onClick, active }) {
-  const toneClass = tone === 'amber' ? 'text-amber-600' : tone === 'red' ? 'text-red-600' : '';
+  const toneClass = tone === 'amber' ? 'text-warning' : tone === 'red' ? 'text-danger' : '';
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!onClick}
       className={`rounded-lg border p-4 text-left transition-colors ${
-        active ? 'border-slate-400 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'
+        active ? 'border-token-strong bg-surface' : 'border-token bg-surface hover:border-token-strong'
       } ${onClick ? '' : 'cursor-default'}`}
     >
       <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
-      <p className="text-sm text-slate-500">{label}</p>
+      <p className="text-sm muted">{label}</p>
     </button>
   );
 }
@@ -252,7 +252,7 @@ function ImportModal({ onClose, onDone }) {
 
       {result ? (
         <div className="space-y-4">
-          <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-800">
+          <div className="rounded-lg border border-success bg-success-soft p-4 text-success">
             <p className="font-semibold">Import finished</p>
             <p className="mt-1 text-sm">
               {result.created} added, {result.updated} updated
@@ -260,7 +260,7 @@ function ImportModal({ onClose, onDone }) {
             </p>
           </div>
           {result.problems?.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <div className="rounded-lg border border-warning bg-warning-soft p-4 text-sm text-warning">
               <p className="font-semibold">Rows that were skipped</p>
               <ul className="mt-2 space-y-1">
                 {result.problems.map((p) => (
@@ -275,7 +275,7 @@ function ImportModal({ onClose, onDone }) {
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm muted">
             Export your spreadsheet as a <strong>.csv</strong> file, then choose it here.
             Column headings are matched automatically — "Price", "Rate" and "MRP" all work.
             Products with a code you already use will be updated rather than duplicated.
@@ -294,19 +294,19 @@ function ImportModal({ onClose, onDone }) {
 
           {preview && (
             <div className="space-y-3">
-              <div className="rounded-lg border border-slate-200 p-4 text-sm">
+              <div className="rounded-lg border border-token p-4 text-sm">
                 <p className="font-medium">
                   Found {preview.readyCount} product{preview.readyCount === 1 ? '' : 's'}
                   {preview.problemCount > 0 && ` · ${preview.problemCount} row(s) will be skipped`}
                 </p>
-                <p className="mt-2 text-slate-500">
+                <p className="mt-2 muted">
                   Matched columns:{' '}
                   {Object.entries(preview.detectedColumns)
                     .map(([field, heading]) => `${heading} → ${field.replace(/_/g, ' ')}`)
                     .join(', ')}
                 </p>
                 {preview.ignoredColumns.length > 0 && (
-                  <p className="mt-1 text-slate-400">
+                  <p className="mt-1 subtle">
                     Ignored: {preview.ignoredColumns.join(', ')}
                   </p>
                 )}
@@ -326,7 +326,7 @@ function ImportModal({ onClose, onDone }) {
               )}
 
               {preview.problems.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="rounded-lg border border-warning bg-warning-soft p-4 text-sm text-warning">
                   <p className="font-semibold">These rows will be skipped</p>
                   <ul className="mt-2 space-y-1">
                     {preview.problems.map((p) => (
@@ -454,7 +454,7 @@ function StockForm({ product, onClose, onDone, onError }) {
   return (
     <Modal title={`Adjust stock — ${product.name}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm muted">
           Currently <strong>{product.stock_quantity}</strong> in stock.
         </p>
 
@@ -479,7 +479,7 @@ function StockForm({ product, onClose, onDone, onError }) {
         </Field>
 
         {amount !== '' && (
-          <p className={`text-sm ${result < 0 ? 'text-red-600' : 'text-slate-600'}`}>
+          <p className={`text-sm ${result < 0 ? 'text-danger' : 'muted'}`}>
             {result < 0
               ? `You only have ${product.stock_quantity} — you can't remove ${parsed}.`
               : `New total will be ${result}.`}

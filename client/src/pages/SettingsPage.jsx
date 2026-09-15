@@ -47,7 +47,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) return <p className="text-slate-500">Loading…</p>;
+  if (loading) return <p className="muted">Loading…</p>;
 
   return (
     <div className="max-w-2xl">
@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {saved && (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="mb-4 rounded-lg border border-success bg-success-soft p-4 text-sm text-success">
           Saved. New receipts will use these details.
         </div>
       )}

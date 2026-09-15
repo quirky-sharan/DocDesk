@@ -91,7 +91,7 @@ export default function PurchaseOrdersPage() {
             Clear filters
           </button>
         )}
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table
@@ -208,10 +208,10 @@ function NewOrder({ onClose, onDone }) {
         </div>
 
         <div>
-          <p className="mb-2 text-sm font-medium text-slate-700">Items</p>
+          <p className="mb-2 text-sm font-medium">Items</p>
           <div className="space-y-2">
             {lines.map((line, index) => (
-              <div key={index} className="grid grid-cols-12 gap-2 rounded-lg border border-slate-200 p-3">
+              <div key={index} className="grid grid-cols-12 gap-2 rounded-lg border border-token p-3">
                 <div className="col-span-12 sm:col-span-5">
                   <select className="input-field" value={line.product_id}
                           onChange={(e) => pickProduct(index, e.target.value)}>
@@ -253,11 +253,11 @@ function NewOrder({ onClose, onDone }) {
           </button>
         </div>
 
-        <div className="rounded-lg bg-slate-50 p-4 text-right text-lg font-semibold">
+        <div className="rounded-lg bg-sunken p-4 text-right text-lg font-semibold">
           Total cost: {total.toFixed(2)}
         </div>
 
-        <p className="text-sm text-slate-500">
+        <p className="text-sm muted">
           Ordering doesn't change your stock. Stock goes up when you mark the goods as received.
         </p>
 
@@ -314,19 +314,19 @@ function ReceiveOrder({ orderId, onClose, onDone }) {
   return (
     <Modal title="Receive delivery" onClose={onClose}>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
-      {!order && !error && <p className="text-slate-500">Loading…</p>}
+      {!order && !error && <p className="muted">Loading…</p>}
       {order && (
         <form onSubmit={submit} className="space-y-4">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm muted">
             Enter how many actually arrived. Leave a line at 0 if it didn't come.
           </p>
           {order.items.map((item) => {
             const outstanding = Number(item.quantity) - Number(item.quantity_received);
             return (
-              <div key={item.id} className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3">
+              <div key={item.id} className="flex items-center justify-between gap-4 border-b border-token pb-3">
                 <div>
                   <p className="font-medium">{item.description}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs muted">
                     {item.quantity_received} of {item.quantity} received · {outstanding} outstanding
                   </p>
                 </div>
@@ -400,7 +400,7 @@ function RestockModal({ suggestion, onClose, onDone, onError }) {
   return (
     <Modal title="Restock what's running low" onClose={onClose} wide>
       <div className="space-y-4">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm muted">
           {suggestion.count} item{suggestion.count === 1 ? ' is' : 's are'} at or below their
           reorder level. Orders go to one supplier at a time — quantities are a suggestion,
           change anything you like.
@@ -421,12 +421,12 @@ function RestockModal({ suggestion, onClose, onDone, onError }) {
           </div>
         )}
 
-        <div className="rounded-lg border border-slate-200">
+        <div className="rounded-lg border border-token">
           {group.items.map((item) => (
-            <div key={item.productId} className="flex items-center justify-between gap-4 border-b border-slate-100 p-3 last:border-0">
+            <div key={item.productId} className="flex items-center justify-between gap-4 border-b border-token p-3 last:border-0">
               <div className="min-w-0">
                 <p className="truncate font-medium">{item.name}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs muted">
                   {item.stockQuantity} left · reorder at {item.reorderLevel} · {item.unitCost.toFixed(2)} each
                 </p>
               </div>
@@ -444,12 +444,12 @@ function RestockModal({ suggestion, onClose, onDone, onError }) {
           ))}
         </div>
 
-        <div className="rounded-lg bg-slate-50 p-4 text-right">
-          <span className="text-sm text-slate-500">Order total </span>
+        <div className="rounded-lg bg-sunken p-4 text-right">
+          <span className="text-sm muted">Order total </span>
           <span className="text-lg font-semibold">{total.toFixed(2)}</span>
         </div>
 
-        <p className="text-sm text-slate-500">
+        <p className="text-sm muted">
           This creates the order only. Stock goes up when you mark the goods as received.
         </p>
 

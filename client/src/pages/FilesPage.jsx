@@ -73,7 +73,7 @@ export default function FilesPage() {
       render: (f) => (
         <div>
           <div className="font-medium">{f.original_name}</div>
-          {f.description && <div className="text-xs text-slate-500">{f.description}</div>}
+          {f.description && <div className="text-xs muted">{f.description}</div>}
         </div>
       ),
     },
@@ -129,11 +129,11 @@ export default function FilesPage() {
         <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search files…" />
         <Select value={kind} onChange={setKind} options={KINDS} placeholder="All types" />
         {info && (
-          <span className="text-sm text-slate-500">
+          <span className="text-sm muted">
             {info.count} files · {formatBytes(info.totalBytes)} stored
           </span>
         )}
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table
@@ -183,17 +183,17 @@ function DropZone({ onFiles, uploading, info }) {
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-        dragging ? 'border-teal-500 bg-teal-50' : 'border-slate-300 bg-white'
+        dragging ? 'border-accent bg-accent-soft' : 'border-token-strong bg-surface'
       }`}
     >
       <p className="text-lg font-medium">
         {uploading ? 'Uploading…' : 'Drop files here'}
       </p>
-      <p className="mt-1 text-sm text-slate-500">
+      <p className="mt-1 text-sm muted">
         or{' '}
         <button
           type="button"
-          className="text-blue-600 underline"
+          className="link underline"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
         >
@@ -201,7 +201,7 @@ function DropZone({ onFiles, uploading, info }) {
         </button>
       </p>
       {info && (
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-2 text-xs subtle">
           {info.allowed}. Up to {formatBytes(info.maxFileBytes)} each.
         </p>
       )}
@@ -235,7 +235,7 @@ function PreviewModal({ file, onClose }) {
 
   return (
     <Modal title={file.original_name} onClose={onClose} wide>
-      <div className="max-h-[65vh] overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+      <div className="max-h-[65vh] overflow-auto rounded-lg border border-token bg-sunken p-2">
         {isImage ? (
           <img src={url} alt={file.original_name} className="mx-auto max-h-[60vh]" />
         ) : (
@@ -245,12 +245,12 @@ function PreviewModal({ file, onClose }) {
             src={url}
             title={file.original_name}
             sandbox=""
-            className="h-[60vh] w-full rounded bg-white"
+            className="h-[60vh] w-full rounded bg-surface"
           />
         )}
       </div>
       <div className="mt-4 flex items-center justify-between">
-        <span className="text-sm text-slate-500">
+        <span className="text-sm muted">
           {formatBytes(file.size_bytes)} · {file.mime_type}
         </span>
         <div className="flex gap-2">
@@ -281,7 +281,7 @@ function RenameModal({ file, onClose, onSaved, onError }) {
   return (
     <Modal title="Edit note" onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-slate-500">{file.original_name}</p>
+        <p className="text-sm muted">{file.original_name}</p>
         <Field label="Note" hint="What this file is, so you can find it later">
           <textarea
             className="input-field"

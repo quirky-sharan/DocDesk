@@ -57,7 +57,7 @@ export default function MessagesPage() {
     { key: 'subject', label: 'Message', render: (m) => (
       <div>
         <div className="font-medium">{m.subject || '—'}</div>
-        <div className="text-xs text-slate-500">{m.body}</div>
+        <div className="text-xs muted">{m.body}</div>
       </div>
     ) },
     { key: 'trigger_type', label: 'Triggered by', render: (m) => (m.trigger_type || '—').replace(/_/g, ' ') },
@@ -79,7 +79,7 @@ export default function MessagesPage() {
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
-      <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div className="mb-6 rounded-lg border border-accent bg-accent-soft p-4 text-sm text-accent">
         <p className="font-semibold">Sending is not switched on yet</p>
         <p className="mt-1">
           DocDesk works out <em>when</em> a message should go out — when something runs low, or when
@@ -89,7 +89,7 @@ export default function MessagesPage() {
       </div>
 
       {notice && (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="mb-4 rounded-lg border border-success bg-success-soft p-4 text-sm text-success">
           {notice}
         </div>
       )}
@@ -102,7 +102,7 @@ export default function MessagesPage() {
           options={[['queued', 'Waiting'], ['sent', 'Sent'], ['failed', 'Failed']]}
           placeholder="Any status"
         />
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table

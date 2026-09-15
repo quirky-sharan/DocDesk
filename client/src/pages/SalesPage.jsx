@@ -83,11 +83,11 @@ export default function SalesPage() {
           options={[['paid', 'Paid'], ['unpaid', 'Unpaid'], ['partial', 'Part paid'], ['refunded', 'Refunded']]}
           placeholder="Any payment"
         />
-        <label className="flex items-center gap-2 text-sm text-slate-500">
+        <label className="flex items-center gap-2 text-sm muted">
           From
           <input type="date" className="input-field" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-500">
+        <label className="flex items-center gap-2 text-sm muted">
           To
           <input type="date" className="input-field" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
@@ -96,7 +96,7 @@ export default function SalesPage() {
             setStatus(''); setFrom(''); setTo(''); list.setSearch('');
           }}>Clear filters</button>
         )}
-        {list.loading && <span className="text-sm text-slate-400">Loading…</span>}
+        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
       <Table
@@ -217,13 +217,13 @@ function NewSale({ onClose, onDone }) {
         </Field>
 
         <div>
-          <p className="mb-2 text-sm font-medium text-slate-700">Items</p>
+          <p className="mb-2 text-sm font-medium">Items</p>
           <div className="space-y-2">
             {lines.map((line, index) => {
               const product = products.find((p) => String(p.id) === String(line.product_id));
               const short = product && Number(line.quantity) > product.stock_quantity;
               return (
-                <div key={index} className="rounded-lg border border-slate-200 p-3">
+                <div key={index} className="rounded-lg border border-token p-3">
                   <div className="grid grid-cols-12 gap-2">
                     <div className="col-span-12 sm:col-span-5">
                       <select
@@ -271,7 +271,7 @@ function NewSale({ onClose, onDone }) {
                     </div>
                   </div>
                   {short && (
-                    <p className="mt-2 text-sm text-red-600">
+                    <p className="mt-2 text-sm text-danger">
                       Only {product.stock_quantity} of {product.name} in stock.
                     </p>
                   )}
@@ -314,11 +314,11 @@ function NewSale({ onClose, onDone }) {
           </Field>
         </div>
 
-        <div className="rounded-lg bg-slate-50 p-4 text-sm">
+        <div className="rounded-lg bg-sunken p-4 text-sm">
           <Row label="Subtotal" value={subtotal} />
           {Number(discount) > 0 && <Row label="Discount" value={-Number(discount)} />}
           {Number(taxRate) > 0 && <Row label={`Tax (${taxRate}%)`} value={tax} />}
-          <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 text-lg font-semibold">
+          <div className="mt-2 flex justify-between border-t border-token pt-2 text-lg font-semibold">
             <span>Total</span>
             <span>{total.toFixed(2)}</span>
           </div>
@@ -337,7 +337,7 @@ function NewSale({ onClose, onDone }) {
 
 function Row({ label, value }) {
   return (
-    <div className="flex justify-between text-slate-600">
+    <div className="flex justify-between muted">
       <span>{label}</span>
       <span>{Number(value).toFixed(2)}</span>
     </div>
@@ -355,12 +355,12 @@ function ReceiptModal({ saleId, onClose }) {
   return (
     <Modal title="Receipt" onClose={onClose}>
       <ErrorNote error={error} />
-      {!receipt && !error && <p className="text-slate-500">Loading…</p>}
+      {!receipt && !error && <p className="muted">Loading…</p>}
       {receipt && (
         <div>
-          <div className="border-b border-slate-200 pb-3">
+          <div className="border-b border-token pb-3">
             <p className="text-lg font-semibold">{receipt.reference}</p>
-            <p className="text-sm text-slate-500">{new Date(receipt.issuedAt).toLocaleString()}</p>
+            <p className="text-sm muted">{new Date(receipt.issuedAt).toLocaleString()}</p>
             {receipt.customer && <p className="mt-2 text-sm">Billed to {receipt.customer.name}</p>}
           </div>
 
@@ -369,7 +369,7 @@ function ReceiptModal({ saleId, onClose }) {
               {receipt.items.map((item, i) => (
                 <tr key={i}>
                   <td className="py-1">{item.description}</td>
-                  <td className="py-1 text-right text-slate-500">
+                  <td className="py-1 text-right muted">
                     {item.quantity} × {item.unitPrice.toFixed(2)}
                   </td>
                   <td className="py-1 text-right">{item.lineTotal.toFixed(2)}</td>
@@ -378,7 +378,7 @@ function ReceiptModal({ saleId, onClose }) {
             </tbody>
           </table>
 
-          <div className="border-t border-slate-200 pt-3 text-sm">
+          <div className="border-t border-token pt-3 text-sm">
             <Row label="Subtotal" value={receipt.totals.subtotal} />
             {receipt.totals.discount > 0 && <Row label="Discount" value={-receipt.totals.discount} />}
             {receipt.totals.tax > 0 && <Row label="Tax" value={receipt.totals.tax} />}
@@ -386,7 +386,7 @@ function ReceiptModal({ saleId, onClose }) {
               <span>Total</span>
               <span>{receipt.totals.total.toFixed(2)}</span>
             </div>
-            <p className="mt-2 text-slate-500">
+            <p className="mt-2 muted">
               Paid by {receipt.payment.method || '—'} · {receipt.payment.status}
             </p>
           </div>
