@@ -5,8 +5,11 @@ const { describeTable } = require('../tables');
 const api = require('./internalApi');
 
 const MAX_STEPS = 8;
-const MAX_HISTORY = 40;
-const MAX_TOOL_RESULT_CHARS = 7000;
+const MAX_HISTORY = 24;
+const MAX_TOOL_RESULT_CHARS = 3500;
+// Tool results from earlier turns are shrunk hard: the model already acted on
+// them, and they are the biggest drain on the per-minute token allowance.
+const OLD_TOOL_RESULT_CHARS = 280;
 const PENDING_TTL_MS = 30 * 60 * 1000;
 
 // Changes awaiting a click. Held server-side so the browser can only say "yes"
@@ -33,7 +36,7 @@ async function systemPrompt(page) {
   return `You are the front-desk receptionist for ${settings.business_name || 'this business'}, working inside DocDesk - the shop's inventory, sales and records app. You are talking to the shop owner or their staff, who are not technical.
 
 Right now: ${now.toDateString()}, ${now.toTimeString().slice(0, 5)}. The user is looking at the "${page || '/'}" page.
-Currency symbol: "${settings.currency_symbol || ''}" (blank means plain numbers). Default tax rate: ${settings.default_tax_rate || 0}%.
+${settings.currency_symbol ? `Currency symbol: "${settings.currency_symbol}" - put it in front of money amounts.` : 'No currency symbol is set: write money as plain numbers like 1250.00, with no symbol and no currency name.'} Default tax rate: ${settings.default_tax_rate || 0}%.
 
 What's in the database:
 - products: ${cols(products)}
@@ -44,7 +47,7 @@ What's in the database:
 How to work:
 1. Use tools for every fact about the business. Never guess a number, name, price, stock level or id.
 2. Refer to things by name. If a name matches several records or none, say so and ask - don't pick one.
-3. To change anything, call the matching tool. The app shows the user a confirmation card; the change only happens when they click Confirm. Never say something is done until a tool result says it was confirmed and completed. After proposing a change, tell them briefly to check the card.
+3. Change tools and get_details look records up by name themselves - call them directly; don't search first just to find something you're about to act on. To change anything, call the matching tool. The app shows the user a confirmation card; the change only happens when they click Confirm. Never say something is done until a tool result says it was confirmed and completed. After proposing a change, tell them briefly to check the card.
 4. When the user wants to see, sort, filter or find a list, use show_on_page so it appears on screen, then summarise what's there in one or two lines.
 5. For a multi-step request, do the steps in order. If a step needs confirmation, stop and wait; you'll be told when it's confirmed.
 6. Keep replies short, warm and plain: no jargon, no SQL, no JSON, no internal ids. Use short bullet lists for several items. Money to 2 decimal places.
@@ -58,6 +61,22 @@ function trimHistory(messages) {
   let start = messages.length - MAX_HISTORY;
   while (start < messages.length && messages[start].role !== 'user') start++;
   return messages.slice(start);
+}
+
+/** Shrinks tool results that belong to turns before the latest user message. */
+function compressOlderTurns(messages) {
+  let lastUser = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUser = i;
+      break;
+    }
+  }
+  return messages.map((m, i) =>
+    i < lastUser && m.role === 'tool' && m.content.length > OLD_TOOL_RESULT_CHARS
+      ? { ...m, content: `${m.content.slice(0, OLD_TOOL_RESULT_CHARS)}…(older result shortened)` }
+      : m
+  );
 }
 
 /** Only fields the API accepts go back in; providers reject extras like `reasoning`. */
@@ -108,26 +127,39 @@ function parseArgs(raw) {
  * Runs the model/tool loop for one user turn.
  * Returns { reply, messages, blocks, actions, pending, model, steps }.
  */
-async function runTurn({ messages: incoming, userText, page, continuation }) {
+async function runTurn({ messages: incoming, userText, page, continuation, maxWaitMs }) {
   prunePending();
   const history = sanitiseIncoming(incoming);
   if (userText) history.push({ role: 'user', content: String(userText).slice(0, 4000) });
   if (continuation) history.push({ role: 'user', content: continuation });
 
   const system = { role: 'system', content: await systemPrompt(page) };
+  const currencySymbol = await api.get('/settings').then((r) => r.values.currency_symbol).catch(() => '');
   const tools = toolDefinitions();
 
   const blocks = [];
   const actions = [];
   const activity = [];
   const proposals = [];
+  // Models occasionally repeat an identical call in one turn. Answer the repeat
+  // from memory so it neither costs a request nor shows a duplicate card.
+  const seenCalls = new Map();
   let model = null;
   let reply = '';
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const result = await chat({ messages: [system, ...trimHistory(history)], tools, temperature: 0.2 });
+    const result = await chat({
+      messages: [system, ...compressOlderTurns(trimHistory(history))],
+      tools,
+      temperature: 0.2,
+      maxTokens: 900,
+      maxWaitMs,
+    });
     model = result.model;
     const message = result.message;
+    if (result.usage) {
+      console.log(`[assistant] step ${step + 1} ${result.model} ${result.usage.prompt_tokens}+${result.usage.completion_tokens} tokens ${result.latencyMs}ms`);
+    }
     history.push(cleanAssistantMessage(message));
 
     if (!message.tool_calls?.length) {
@@ -143,8 +175,11 @@ async function runTurn({ messages: incoming, userText, page, continuation }) {
       try {
         if (!tool) throw new ToolError(`There is no tool called "${name}".`);
         const args = parseArgs(call.function.arguments);
+        const signature = `${name}:${JSON.stringify(args)}`;
 
-        if (tool.kind === 'write') {
+        if (seenCalls.has(signature)) {
+          content = seenCalls.get(signature);
+        } else if (tool.kind === 'write') {
           const plan = await tool.prepare(args);
           const id = crypto.randomUUID();
           pending.set(id, { plan, tool: name, createdAt: Date.now() });
@@ -169,6 +204,7 @@ async function runTurn({ messages: incoming, userText, page, continuation }) {
           content = { ok: true, ...(output.data !== undefined ? { result: output.data } : {}) };
           activity.push({ tool: name, state: 'done' });
         }
+        seenCalls.set(signature, content);
       } catch (err) {
         // Tool failures go back to the model as information so it can fix its
         // call or ask the user, rather than ending the conversation.
@@ -194,6 +230,12 @@ async function runTurn({ messages: incoming, userText, page, continuation }) {
       reply = "That took more steps than I'm allowed in one go. Could you break it into smaller requests?";
       history.push({ role: 'assistant', content: reply });
     }
+  }
+
+  // Models sometimes add a currency the shop never set up. Strip it rather than
+  // let a receipt amount read as the wrong currency.
+  if (!currencySymbol) {
+    reply = reply.replace(/(?:₹|Rs\.?|INR|\$|USD|€|£)\s?(?=\d)/g, '');
   }
 
   return {
@@ -232,22 +274,48 @@ async function confirmAction({ id, messages, page, openIds }) {
   } catch (err) {
     // Tell the model it failed so its follow-up is accurate.
     const failure = err.message || 'The change could not be made.';
-    const turn = await runTurn({
-      messages,
-      page,
-      continuation: `(System note: the user confirmed "${entry.plan.summary}", but it FAILED: ${failure}. Explain briefly and suggest what to do.)`,
-    });
-    return { ...turn, confirmed: { ok: false, summary: entry.plan.summary, error: failure } };
+    const history = sanitiseIncoming(messages);
+    history.push({ role: 'user', content: `(System note: the user confirmed "${entry.plan.summary}", but it failed: ${failure})` });
+    const reply = `That didn't go through: ${failure}`;
+    history.push({ role: 'assistant', content: reply });
+    return {
+      reply,
+      messages: trimHistory(history),
+      blocks: [],
+      actions: [],
+      activity: [],
+      pending: [],
+      model: null,
+      confirmed: { ok: false, summary: entry.plan.summary, error: failure },
+    };
   }
 
-  const turn = await runTurn({
-    messages,
-    page,
-    continuation:
-      `(System note: the user confirmed "${entry.plan.summary}" and it succeeded: ${outcome.message} ` +
-      `Result: ${toolContent(outcome.data || {})}.${stillWaiting(openIds, id)} If the original request has more steps, continue with them; ` +
-      'otherwise reply with one short sentence confirming it is done.)',
-  });
+  const note =
+    `(System note: the user confirmed "${entry.plan.summary}" and it succeeded: ${outcome.message} ` +
+    `Result: ${toolContent(outcome.data || {})}.${stillWaiting(openIds, id)} If the original request has more steps, continue with them; ` +
+    'otherwise reply with one short sentence confirming it is done.)';
+
+  let turn;
+  try {
+    // Short wait only: the change is already made, so don't hold the user up
+    // waiting for the AI to phrase a follow-up.
+    turn = await runTurn({ messages, page, continuation: note, maxWaitMs: 4000 });
+  } catch (err) {
+    console.warn(`[assistant] follow-up after confirm skipped: ${err.message}`);
+    const history = sanitiseIncoming(messages);
+    history.push({ role: 'user', content: note });
+    history.push({ role: 'assistant', content: outcome.message });
+    turn = {
+      reply: outcome.message,
+      messages: trimHistory(history),
+      blocks: [],
+      actions: [],
+      activity: [],
+      pending: [],
+      model: null,
+      followUpSkipped: true,
+    };
+  }
 
   return {
     ...turn,

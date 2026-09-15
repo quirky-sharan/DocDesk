@@ -113,17 +113,30 @@ function parseDuration(value) {
   return ms ? Math.ceil(ms) : null;
 }
 
+// Per-minute token allowances refill continuously (a token bucket), not all at
+// once at the reset time - so "remaining" grows every second after a request.
 function recordBudget(model, headers) {
   const remaining = Number(headers.get('x-ratelimit-remaining-tokens'));
-  const reset = parseDuration(headers.get('x-ratelimit-reset-tokens'));
+  const limit = Number(headers.get('x-ratelimit-limit-tokens'));
   if (!Number.isFinite(remaining)) return;
   const previous = budgets.get(model) || {};
-  budgets.set(model, { ...previous, remaining, resetAt: Date.now() + (reset ?? 60000) });
+  budgets.set(model, {
+    ...previous,
+    remaining,
+    limit: Number.isFinite(limit) && limit > 0 ? limit : previous.limit || 6000,
+    at: Date.now(),
+    coolUntil: previous.coolUntil,
+  });
 }
 
 function coolDown(model, ms) {
   const previous = budgets.get(model) || {};
-  budgets.set(model, { ...previous, remaining: 0, coolUntil: Date.now() + Math.max(ms, 1000), resetAt: Date.now() + Math.max(ms, 1000) });
+  budgets.set(model, { ...previous, remaining: 0, at: Date.now(), coolUntil: Date.now() + Math.max(ms, 1000) });
+}
+
+function tokensNow(budget, now = Date.now()) {
+  const perMs = budget.limit / 60000;
+  return Math.min(budget.limit, budget.remaining + (now - budget.at) * perMs);
 }
 
 /** Milliseconds until this model can probably take a request of this size. */
@@ -132,16 +145,17 @@ function waitFor(model, estimatedTokens) {
   if (!budget) return 0;
   const now = Date.now();
   if (budget.coolUntil && budget.coolUntil > now) return budget.coolUntil - now;
-  if (budget.resetAt && budget.resetAt <= now) return 0;
-  if (budget.remaining >= estimatedTokens) return 0;
-  return Math.max((budget.resetAt || now) - now, 0);
+  const needed = Math.min(estimatedTokens, budget.limit) - tokensNow(budget, now);
+  if (needed <= 0) return 0;
+  return Math.ceil(needed / (budget.limit / 60000));
 }
 
 function estimateTokens(body) {
-  // ~3.5 characters per token for English plus JSON, plus room for the reply.
-  return Math.ceil(JSON.stringify(body.messages || []).length / 3.5)
-    + Math.ceil(JSON.stringify(body.tools || []).length / 3.5)
-    + (body.max_tokens || 0);
+  // Tokenisers differ by model; ~4 chars/token is close for English + JSON,
+  // plus a typical reply rather than the maximum allowed.
+  return Math.ceil(JSON.stringify(body.messages || []).length / 4)
+    + Math.ceil(JSON.stringify(body.tools || []).length / 4)
+    + Math.min(body.max_tokens || 0, 300);
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -262,7 +276,7 @@ async function postChat(config, model, body, signal) {
  * One chat completion, with automatic model fallback.
  * Returns the raw assistant message plus timing and the model that answered.
  */
-async function chat({ messages, tools, toolChoice, temperature = 0.2, maxTokens = 1200, json = false, timeoutMs = 30000 }) {
+async function chat({ messages, tools, toolChoice, temperature = 0.2, maxTokens = 1200, json = false, timeoutMs = 30000, maxWaitMs = 25000 }) {
   const config = providerConfig();
   if (!config || !isConfigured()) {
     throw new LlmError('No AI provider is configured. Add GROQ_API_KEY to server/.env.', { status: 503, code: 'not_configured' });
@@ -277,7 +291,6 @@ async function chat({ messages, tools, toolChoice, temperature = 0.2, maxTokens 
 
   const models = await candidateModels(config);
   const estimated = estimateTokens(body);
-  const MAX_WAIT_MS = 12000;
   let lastError = null;
   const unusable = new Set();
 
@@ -286,8 +299,9 @@ async function chat({ messages, tools, toolChoice, temperature = 0.2, maxTokens 
   for (let pass = 0; pass < 3; pass++) {
     const ordered = models
       .filter((m) => !unusable.has(m))
-      .map((m) => ({ model: m, wait: waitFor(m, estimated) }))
-      .sort((a, b) => (a.wait === 0 && b.wait === 0 ? 0 : a.wait - b.wait));
+      .map((m, index) => ({ model: m, index, wait: waitFor(m, estimated) }))
+      // Ready models keep preference order; otherwise soonest-available first.
+      .sort((a, b) => (a.wait === 0 && b.wait === 0 ? a.index - b.index : a.wait - b.wait));
 
     if (!ordered.length) break;
 
@@ -295,7 +309,13 @@ async function chat({ messages, tools, toolChoice, temperature = 0.2, maxTokens 
     const attempt = ready.length ? ready : [ordered[0]];
 
     if (!ready.length) {
-      if (ordered[0].wait > MAX_WAIT_MS) break;
+      if (ordered[0].wait > maxWaitMs) {
+        const busy = new LlmError('The free AI allowance is busy right now. Try again in a few seconds.', {
+          status: 429, retryable: true, code: 'rate_limited',
+        });
+        busy.waitMs = ordered[0].wait;
+        throw busy;
+      }
       await sleep(ordered[0].wait + 250);
     }
 

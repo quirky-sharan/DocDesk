@@ -46,7 +46,7 @@ function money(value, currency = '') {
 }
 
 function obj(properties, required = []) {
-  return { type: 'object', properties, required, additionalProperties: false };
+  return { type: 'object', properties, required };
 }
 
 const TABLE_ENUM = { type: 'string', enum: Object.keys(TABLE_META) };
@@ -127,10 +127,7 @@ const TOOLS = {
 
   search_records: {
     kind: 'read',
-    description:
-      'Look records up without changing the screen. Use it to answer questions, check what exists, or find something before acting on it. ' +
-      'Filters: products {category, stock: "in"|"low"|"out", supplier_id (name or id)}; sales {payment_status: paid|unpaid|partial|refunded, from: YYYY-MM-DD, to: YYYY-MM-DD}; ' +
-      'purchase_orders {status: draft|ordered|partial|received|cancelled}; message_log {status: queued|sent|failed}; files {kind: image|pdf|document|data}.',
+    description: 'Look up records without changing the screen. filters: products{category,stock:in|low|out,supplier_id}, sales{payment_status,from,to (YYYY-MM-DD)}, purchase_orders{status}, message_log{status}, files{kind:image|pdf|document|data}.',
     parameters: obj({
       table: TABLE_ENUM,
       search: { type: 'string', description: 'Free text matched against names, codes, references, customer/supplier names.' },
@@ -150,9 +147,7 @@ const TOOLS = {
 
   get_details: {
     kind: 'read',
-    description:
-      'Full details of one record, by name, code, reference or id. Sales and purchase orders include their line items; ' +
-      'products include recent sales history; customers include purchase history.',
+    description: 'Full details of one record by name/code/reference/id; includes line items or history.',
     parameters: obj({ table: TABLE_ENUM, record: { type: 'string' } }, ['table', 'record']),
     async run({ table, record }) {
       const row = await resolveRecord(table, record);
@@ -169,8 +164,7 @@ const TOOLS = {
 
   business_overview: {
     kind: 'read',
-    description:
-      "Snapshot of how the business is doing right now: today vs yesterday, this week vs last, stock value, low/out of stock, what needs reordering, unpaid sales, messages waiting. Use for 'how are we doing', 'anything I should know', morning briefings.",
+    description: 'Today/week sales vs previous, stock value, low/out of stock, reorder needs, unpaid, waiting messages.',
     parameters: obj({}),
     async run() {
       const [stock, pulse, month, restock, queued] = await Promise.all([
@@ -209,7 +203,7 @@ const TOOLS = {
 
   sales_report: {
     kind: 'read',
-    description: 'Revenue, estimated profit, best-selling products, top customers, and splits by category and payment method for a period.',
+    description: 'Revenue, profit, top products and customers, category and payment splits for a period.',
     parameters: obj({
       days: { type: 'integer', description: 'Last N days (default 30). Ignored if from/to given.' },
       from: { type: 'string', description: 'YYYY-MM-DD' },
@@ -225,7 +219,18 @@ const TOOLS = {
         api.get('/reports/by-payment-method', params),
       ]);
       return {
-        data: { summary, topProducts: products, topCustomers: customers, byCategory: categories, byPaymentMethod: methods },
+        data: {
+          period: `${summary.from} to ${summary.to}`,
+          revenue: summary.revenue,
+          sales: summary.saleCount,
+          averageSale: summary.averageSale,
+          estimatedProfit: summary.estimatedProfit,
+          unpaid: summary.outstanding,
+          topProducts: products.map((p) => ({ name: p.name, sold: p.quantity, revenue: p.revenue })),
+          topCustomers: customers.map((c) => ({ name: c.name, sales: c.saleCount, spent: c.revenue })),
+          byCategory: categories.map((c) => ({ category: c.category, revenue: c.revenue })),
+          byPaymentMethod: methods.map((m) => ({ method: m.method, revenue: m.revenue })),
+        },
         block: {
           type: 'stats',
           title: `${summary.from} to ${summary.to}`,
@@ -242,7 +247,7 @@ const TOOLS = {
 
   restock_suggestions: {
     kind: 'read',
-    description: 'Products at or below their reorder level, with a suggested order quantity, grouped by supplier. Use before raising purchase orders.',
+    description: 'Products needing reorder with suggested quantities, grouped by supplier.',
     parameters: obj({}),
     async run() {
       const data = await api.get('/products/restock-suggestion');
@@ -252,7 +257,7 @@ const TOOLS = {
 
   get_settings: {
     kind: 'read',
-    description: 'Business details used on receipts (name, address, phone, email, currency symbol, default tax rate, receipt footer).',
+    description: 'Business name, address, phone, email, currency, default tax, receipt footer.',
     parameters: obj({}),
     async run() {
       const data = await api.get('/settings');
@@ -264,7 +269,7 @@ const TOOLS = {
 
   navigate: {
     kind: 'ui',
-    description: 'Open a page of the app.',
+    description: 'Open a page.',
     parameters: obj({ page: { type: 'string', enum: Object.keys(PAGES) } }, ['page']),
     async run({ page }) {
       const path = PAGES[String(page).toLowerCase()];
@@ -275,9 +280,7 @@ const TOOLS = {
 
   show_on_page: {
     kind: 'ui',
-    description:
-      'Open the right page and sort, filter or search the list there so the user can see it. Use this whenever the user wants to SEE, sort, filter or show a list. ' +
-      'Takes the same filters as search_records.',
+    description: 'Open the page and apply search/sort/filters so the user SEES the list. Same filters as search_records.',
     parameters: obj({
       table: TABLE_ENUM,
       search: { type: 'string' },
@@ -308,7 +311,7 @@ const TOOLS = {
 
   export_table: {
     kind: 'ui',
-    description: 'Download a table as a file (csv, xlsx, json or pdf). Respects search and sort.',
+    description: 'Download a table as csv/xlsx/json/pdf.',
     parameters: obj({
       table: TABLE_ENUM,
       format: { type: 'string', enum: ['csv', 'xlsx', 'json', 'pdf'] },
@@ -341,7 +344,7 @@ const TOOLS = {
 
   download_receipt: {
     kind: 'ui',
-    description: 'Download the PDF receipt for a sale.',
+    description: 'Download a sale\'s PDF receipt.',
     parameters: obj({ sale: { type: 'string', description: 'Receipt reference like S-1003, or id.' } }, ['sale']),
     async run({ sale }) {
       const row = await resolveRecord('sales', sale);
@@ -358,10 +361,7 @@ const TOOLS = {
 
   create_record: {
     kind: 'write',
-    description:
-      'Add a product, customer or supplier. Product fields: name (required), sku, category, unit, cost_price, sale_price, stock_quantity, reorder_level, description, supplier (name). ' +
-      'Customer fields: name (required), phone, email, address, notes. Supplier fields: name (required), contact_name, phone, email, address, notes. ' +
-      'Columns the user added themselves are also accepted.',
+    description: 'Add a product/customer/supplier. products: name*,sku,category,unit,cost_price,sale_price,stock_quantity,reorder_level,description,supplier. customers: name*,phone,email,address,notes. suppliers: name*,contact_name,phone,email,address,notes. User-added columns allowed.',
     parameters: obj({
       table: { type: 'string', enum: WRITABLE_TABLES },
       values: { type: 'object' },
@@ -392,7 +392,7 @@ const TOOLS = {
 
   update_record: {
     kind: 'write',
-    description: 'Change fields on an existing product, customer or supplier. Only pass the fields that change.',
+    description: 'Change fields on a product/customer/supplier. Pass only changed fields.',
     parameters: obj({
       table: { type: 'string', enum: WRITABLE_TABLES },
       record: { type: 'string', description: 'Name, code, phone or id of the record.' },
@@ -427,7 +427,7 @@ const TOOLS = {
   delete_record: {
     kind: 'write',
     destructive: true,
-    description: 'Permanently delete one product, customer, supplier, sale, purchase order, file or message. Deleting a sale puts its stock back.',
+    description: 'Permanently delete one record. Deleting a sale restores its stock.',
     parameters: obj({
       table: TABLE_ENUM,
       record: { type: 'string', description: 'Name, reference, code or id.' },
@@ -457,7 +457,7 @@ const TOOLS = {
 
   adjust_stock: {
     kind: 'write',
-    description: 'Add or remove stock for a product outside of a sale (delivery, breakage, stock count). Positive change adds, negative removes.',
+    description: 'Add (+) or remove (-) stock outside a sale.',
     parameters: obj({
       product: { type: 'string' },
       change: { type: 'integer' },
@@ -487,9 +487,7 @@ const TOOLS = {
 
   record_sale: {
     kind: 'write',
-    description:
-      'Record a sale. Stock moves automatically and a receipt is produced. Each item is either a product (name or code) with quantity, or a free-text description with quantity and unit_price for services. ' +
-      'If tax_rate is omitted the shop default applies. customer is optional (walk-in).',
+    description: 'Record a sale; stock moves and a receipt is made. Items: product+quantity, or description+quantity+unit_price. Omit tax_rate for shop default. customer optional.',
     parameters: obj({
       customer: { type: 'string' },
       items: {
@@ -573,7 +571,7 @@ const TOOLS = {
 
   update_sale_payment: {
     kind: 'write',
-    description: 'Mark a sale paid/unpaid/partial/refunded or change how it was paid.',
+    description: 'Change a sale\'s payment status or method.',
     parameters: obj({
       sale: { type: 'string' },
       payment_status: { type: 'string', enum: ['paid', 'unpaid', 'partial', 'refunded'] },
@@ -599,7 +597,7 @@ const TOOLS = {
 
   create_purchase_order: {
     kind: 'write',
-    description: 'Order stock from a supplier. Stock does NOT change until the order is received. Tip: use restock_suggestions to pick quantities.',
+    description: 'Order stock from a supplier (stock changes only when received).',
     parameters: obj({
       supplier: { type: 'string' },
       items: {
@@ -659,7 +657,7 @@ const TOOLS = {
 
   receive_purchase_order: {
     kind: 'write',
-    description: 'Book a delivery in: adds the arrived quantities to stock. Omit items to receive everything still outstanding.',
+    description: 'Receive a delivery into stock; omit items to receive everything outstanding.',
     parameters: obj({
       order: { type: 'string', description: 'Reference like PO-1002, or id.' },
       items: { type: 'array', items: obj({ product: { type: 'string' }, quantity: { type: 'number' } }, ['product', 'quantity']) },
@@ -701,7 +699,7 @@ const TOOLS = {
 
   send_messages: {
     kind: 'write',
-    description: 'Send all queued messages (low-stock alerts, sale confirmations). Delivery is simulated until an email provider is connected.',
+    description: 'Send queued messages (delivery simulated).',
     parameters: obj({}),
     async prepare() {
       const queued = await api.get('/messages', { status: 'queued', pageSize: 5 });
@@ -720,7 +718,7 @@ const TOOLS = {
 
   update_settings: {
     kind: 'write',
-    description: 'Change business details: business_name, business_address, business_phone, business_email, currency_symbol, default_tax_rate, receipt_footer.',
+    description: 'Change settings: business_name, business_address, business_phone, business_email, currency_symbol, default_tax_rate, receipt_footer.',
     parameters: obj({ values: { type: 'object' } }, ['values']),
     async prepare({ values }) {
       const current = await api.get('/settings');
@@ -745,10 +743,7 @@ const TOOLS = {
 
   change_table_structure: {
     kind: 'write',
-    description:
-      'Change the shape or bulk contents of a table. operation.type is one of: ' +
-      'add_column {name, type_hint: text|number|integer|date|boolean}; rename_column {from, to}; drop_column {name}; ' +
-      'set_values {assignments:[{column,value}], conditions:[{column, operator (=, !=, >, >=, <, <=, contains, starts_with, is_empty, is_not_empty), value}]}.',
+    description: 'operation.type: add_column{name,type_hint:text|number|integer|date|boolean} | rename_column{from,to} | drop_column{name} | set_values{assignments:[{column,value}],conditions:[{column,operator,value}]}. operators: = != > >= < <= contains starts_with is_empty is_not_empty.',
     parameters: obj({
       table: { type: 'string', enum: ['products', 'customers', 'suppliers', 'sales', 'purchase_orders'] },
       operation: { type: 'object' },
