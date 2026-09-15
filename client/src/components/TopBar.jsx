@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import ThemeToggle from './ThemeToggle';
+import { useDataChanged } from '../hooks/useDataChanged';
+import { useAssistant } from '../assistant/AssistantProvider';
 
 const TITLES = {
   '/': 'Dashboard',
@@ -32,11 +34,16 @@ export default function TopBar() {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
 
-  // Re-read on navigation so a change on the Settings page shows up immediately.
+  const [refreshTick, setRefreshTick] = useState(0);
+  useDataChanged(() => setRefreshTick((n) => n + 1));
+  const assistant = useAssistant();
+
+  // Re-read on navigation, and when the assistant changes something, so the
+  // name and the waiting-message count never go stale.
   useEffect(() => {
     api.settings.get().then((d) => setBusinessName(d.values.business_name || 'DocDesk')).catch(() => {});
     api.messages.list({ status: 'queued', pageSize: 1 }).then((d) => setWaiting(d.total)).catch(() => {});
-  }, [pathname]);
+  }, [pathname, refreshTick]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -62,6 +69,15 @@ export default function TopBar() {
       <h2 className="text-sm font-medium muted">{TITLES[pathname] || 'DocDesk'}</h2>
 
       <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="btn-ghost hidden gap-2 md:inline-flex"
+          onClick={() => assistant.setOpen(true)}
+          title="Open the assistant"
+        >
+          <span>Ask DocDesk</span>
+          <kbd className="rounded px-1.5 py-0.5 text-[10px] subtle" style={{ border: '1px solid var(--border)' }}>Ctrl K</kbd>
+        </button>
         <ThemeToggle />
         <Link
           to="/messages"

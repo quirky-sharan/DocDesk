@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useDataChanged } from '../hooks/useDataChanged';
 import { PageHeader, ErrorNote, Table, Money, Select } from '../components/ui';
 import { AreaChart, HorizontalBars, ShareBar } from '../components/charts';
 
@@ -41,6 +42,9 @@ export default function ReportsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Changes made through the assistant should show up here without a reload.
+  useDataChanged(() => load());
 
   return (
     <div>

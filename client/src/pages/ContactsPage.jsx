@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAskOutcome } from '../hooks/useAskOutcome';
-import AskBar from '../components/AskBar';
+import { useAssistantView } from '../assistant/useAssistantView';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Money,
   ConfirmButton, ExportButtons, SearchInput, Pagination,
@@ -36,7 +35,7 @@ export default function ContactsPage({ kind }) {
 
   const fetcher = useCallback((params) => resource.list(params), [resource]);
   const list = useList(fetcher, { initialSort: 'name' });
-  const handleAsk = useAskOutcome(list);
+  useAssistantView(kind, list, {}, { defaultSort: 'name' });
 
   async function save(form) {
     try {
@@ -85,8 +84,6 @@ export default function ContactsPage({ kind }) {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
-
-      <AskBar table={kind} onView={handleAsk} />
 
       <div className="mb-4 flex items-center gap-3">
         <SearchInput value={list.search} onChange={list.setSearch} placeholder={`Search ${config.title.toLowerCase()}…`} />

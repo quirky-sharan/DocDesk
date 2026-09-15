@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, receiptPdfUrl } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAskOutcome } from '../hooks/useAskOutcome';
-import AskBar from '../components/AskBar';
+import { useAssistantView } from '../assistant/useAssistantView';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
   ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
@@ -24,8 +23,9 @@ export default function SalesPage() {
     filters: { payment_status: status, from, to },
   });
 
-  const handleAsk = useAskOutcome(list, {
-    filterHandlers: { payment_status: (value) => setStatus(String(value)) },
+  useAssistantView('sales', list, { payment_status: setStatus, from: setFrom, to: setTo }, {
+    defaultSort: 'created_at',
+    defaultDir: 'desc',
   });
 
   async function remove(id) {
@@ -80,8 +80,6 @@ export default function SalesPage() {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
-
-      <AskBar table="sales" onView={handleAsk} />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search receipt or customer…" />

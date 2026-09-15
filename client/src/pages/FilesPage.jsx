@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fileContentUrl } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAskOutcome } from '../hooks/useAskOutcome';
-import AskBar from '../components/AskBar';
+import { useAssistantView } from '../assistant/useAssistantView';
 import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, ConfirmButton,
   ExportButtons, SearchInput, Select, Pagination, formatBytes,
@@ -37,7 +36,7 @@ export default function FilesPage() {
 
   const fetcher = useCallback((params) => api.files.list(params), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { kind } });
-  const handleAsk = useAskOutcome(list);
+  useAssistantView('files', list, { kind: setKind }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   useEffect(() => {
     api.files.info().then(setInfo).catch(() => {});
@@ -125,8 +124,6 @@ export default function FilesPage() {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
-
-      <AskBar table="files" onView={handleAsk} />
 
       <DropZone onFiles={upload} uploading={uploading} info={info} />
 

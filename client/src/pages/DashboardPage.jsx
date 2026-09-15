@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import { useDataChanged } from '../hooks/useDataChanged';
 import { PageHeader, ErrorNote, Badge, Money } from '../components/ui';
 import { AreaChart, HorizontalBars, ShareBar, Sparkline } from '../components/charts';
 
@@ -35,6 +36,9 @@ export default function DashboardPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Changes made through the assistant should show up here without a reload.
+  useDataChanged(() => load());
 
   async function addSampleData() {
     setBusy(true);

@@ -110,9 +110,12 @@ export const api = {
     remove: (id) => request(`/files/${id}`, { method: 'DELETE' }),
   },
   ai: {
-    status: () => request('/ai/status'),
-    interpret: (table, req) => send('/ai/interpret', 'POST', { table, request: req }),
-    apply: (table, operation) => send('/ai/apply', 'POST', { table, operation }),
+    status: (probe = false) => request(`/ai/status${probe ? '?probe=1' : ''}`),
+  },
+  assistant: {
+    message: (payload) => send('/assistant/message', 'POST', payload),
+    confirm: (payload) => send('/assistant/confirm', 'POST', payload),
+    cancel: (id) => send('/assistant/cancel', 'POST', { id }),
   },
   settings: {
     get: () => request('/settings'),
@@ -129,6 +132,12 @@ export const api = {
     pulse: () => request('/reports/pulse'),
   },
 };
+
+/** Server-issued links are "/api/..."; point them at the configured API base. */
+export function apiUrl(path) {
+  if (!path.startsWith('/api')) return path;
+  return `${BASE}${path.slice(4)}`;
+}
 
 export function fileContentUrl(id, { download = false } = {}) {
   return `${BASE}/files/${id}/content${download ? '?download=1' : ''}`;

@@ -6,8 +6,7 @@ import {
   ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
 import ProductDetail from '../components/ProductDetail';
-import AskBar from '../components/AskBar';
-import { useAskOutcome } from '../hooks/useAskOutcome';
+import { useAssistantView } from '../assistant/useAssistantView';
 
 const BLANK = {
   name: '', sku: '', category: '', unit: 'unit',
@@ -57,9 +56,11 @@ export default function InventoryPage() {
 
   // This page has a real category control, so a filter on that column drives
   // the dropdown rather than falling back to a text search.
-  const handleAsk = useAskOutcome(list, {
-    onChanged: afterChange,
-    filterHandlers: { category: (value) => setCategory(String(value)) },
+  // The assistant can sort and filter this list, and changes it makes refresh
+  // the stock summary as well as the rows.
+  useAssistantView('products', list, { category: setCategory, stock: setStock }, {
+    defaultSort: 'name',
+    onChange: () => refreshAside().catch(() => {}),
   });
 
   async function save(form) {
@@ -125,8 +126,6 @@ export default function InventoryPage() {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
-
-      <AskBar table="products" onView={handleAsk} />
 
       {summary && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
