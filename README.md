@@ -6,9 +6,8 @@ small businesses currently getting by on a spreadsheet.
 Built for people who are not technical. Every screen should be obvious, forgiving,
 and hard to break.
 
-> **Status: Phase 2 of 6 — full functionality.**
-> Everything works. It is deliberately plain-looking until the Phase 3 design
-> pass.
+> **Status: Phase 3 of 6 — design pass done.**
+> Everything works, in light or dark.
 
 ---
 
@@ -113,6 +112,9 @@ whatever search and sorting you had applied.
 
 **Settings** — your shop's name, address and footer go on every receipt.
 
+**Light or dark** — the toggle in the top bar cycles: match your computer,
+always light, always dark. It remembers your choice.
+
 ## API
 
 | Route | Purpose |
@@ -154,7 +156,7 @@ return `{ rows, total, page, pageCount }`.
 |---|---|
 | 1 | Audit and wire-up — **done** |
 | 2 | Inventory, sales, receipts, exports, stubbed messaging — **done** |
-| 3 | Design pass, light and dark themes |
+| 3 | Design pass, light and dark themes — **done** |
 | 4 | Natural language table operations |
 | 5 | Stabilisation |
 | 6 | Real keys, deployment |

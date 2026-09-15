@@ -341,3 +341,58 @@ with only the content column scrolling. Don't reintroduce `min-h-screen` there.
 Top bar with business name, an alerts badge counting queued messages, and a
 profile menu. **Accounts are not built, and the menu says so** rather than
 offering a dead button. Wire real accounts here when auth lands.
+
+---
+
+## 2026-09-15 — Phase 3: design pass and themes
+
+No behaviour changed in this phase. Sharan approved moving on after the charts
+and quick actions landed.
+
+### How theming works — read before touching any colour
+
+**Every colour resolves through CSS custom properties in `index.css`.** There
+are no hardcoded palette classes left in `pages/` or `components/` (there is a
+check for this — see below). Adding a raw `bg-slate-200` anywhere breaks dark
+mode silently, because nothing will swap it.
+
+The tokens are declared **three times on purpose**:
+1. `:root` — light
+2. `@media (prefers-color-scheme: dark) { :root:where(:not([data-theme='light'])) }`
+   — the OS setting. The `:where()` keeps specificity at zero so the toggle can
+   still win; the `:not()` guard lets an explicit light choice beat OS dark.
+3. `:root[data-theme='dark']` — the in-app toggle.
+
+**Theme has three states, not two.** "System" is a real state, not just the
+initial value, so someone who switches their machine to dark in the evening
+gets it without opening the app. `hooks/useTheme.js` owns this; it listens to
+the media query so a live OS change applies immediately.
+
+An inline script in `index.html` applies the saved theme **before React
+mounts**. Without it a dark-mode user gets a white flash on every load. It
+deliberately duplicates a few lines of `useTheme.js` — keep them in sync.
+
+### Chart dark steps
+
+Not a flip of the light values — the same hues re-stepped for the dark surface
+and validated separately: worst adjacent CVD ΔE 8.4, normal-vision 19.8, and
+unlike light mode **all four clear 3:1 against the surface**. Light mode's three
+sub-3:1 slots are why the share bar always ships its legend and the revenue
+chart has a table toggle. Don't remove either.
+
+### A trap worth knowing about
+
+While verifying, `getComputedStyle` reported dark values under
+`data-theme="light"` and it looked like a real CSS bug. It wasn't: the browser
+pane had stopped painting, which **freezes CSS transitions mid-flight**, and
+computed style returns the frozen interpolated value. Injecting
+`* { transition: none !important }` before measuring gives the settled values.
+If colours ever look "stuck" in an automated check, suspect this first.
+
+### How it was checked
+
+Walked all ten pages in both themes and measured every text node's contrast
+against whatever is actually painted behind it (walking up for the first
+non-transparent ancestor). Nothing below 2.4:1 in either theme, no console
+output. Re-run that audit after any styling change — it catches a missed
+retint far faster than looking at screenshots.
