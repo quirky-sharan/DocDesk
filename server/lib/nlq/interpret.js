@@ -18,7 +18,9 @@ Allowed "type" values and their fields:
 Comparison operators: ${Object.keys(OPERATORS).join(', ')}.
 
 Rules:
-- Use ONLY column names from the provided list. Never invent one.
+- Put the fields at the top level next to "type". Do not nest them under another key.
+- Use ONLY existing column names from the provided list when referring to data. The exceptions are the NEW name in add_column "name" and rename_column "to", which by definition don't exist yet.
+- Everyday words map to columns: "price" means sale_price, "cost" means cost_price, "stock"/"quantity"/"qty" means stock_quantity, "code" means sku.
 - If the request is ambiguous or names a column that doesn't exist, return
   { "type": "unclear", "reason": "<one short sentence a shopkeeper would understand>" }.
 - "cheapest"/"lowest" means ascending; "most expensive"/"highest"/"best" means descending.

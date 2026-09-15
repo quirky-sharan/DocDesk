@@ -117,7 +117,7 @@ export default function AssistantPanel() {
 
   return (
     <aside
-      className="assistant-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col sm:w-[440px]"
+      className="assistant-panel fixed bottom-0 right-0 top-0 z-40 flex w-full flex-col sm:top-14 sm:w-[440px]"
       style={{ background: 'var(--surface)', borderLeft: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
       aria-label="DocDesk assistant"
     >
@@ -152,7 +152,16 @@ export default function AssistantPanel() {
           </div>
         )}
 
-        {entries.length === 0 && <Welcome suggestions={suggestions} onPick={submit} />}
+        {entries.length === 0 && (
+          <Welcome
+            suggestions={suggestions}
+            onPick={submit}
+            onFill={(text) => {
+              setDraft(text);
+              input.current?.focus();
+            }}
+          />
+        )}
 
         {entries.map((entry) => <Entry key={entry.id} entry={entry} onRetry={submit} />)}
 
@@ -217,7 +226,7 @@ export default function AssistantPanel() {
   );
 }
 
-function Welcome({ suggestions, onPick }) {
+function Welcome({ suggestions, onPick, onFill }) {
   return (
     <div className="pt-4">
       <p className="text-lg font-semibold">Hi — what can I do for you?</p>
@@ -227,7 +236,7 @@ function Welcome({ suggestions, onPick }) {
       </p>
       <div className="mt-4 space-y-2">
         {suggestions.map((s) => (
-          <button key={s} type="button" onClick={() => !s.endsWith('…') && onPick(s)}
+          <button key={s} type="button" onClick={() => (s.endsWith('…') ? onFill(s.replace('…', ' ')) : onPick(s))}
             className="block w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors"
             style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}>
             {s}
@@ -365,6 +374,17 @@ function Block({ block }) {
           </p>
         )}
       </div>
+    );
+  }
+
+  if (block.type === 'link') {
+    return (
+      <button type="button" onClick={() => navigate(block.path)}
+        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium link"
+        style={{ border: '1px solid var(--border)' }}>
+        {block.label}
+        <Icon d={['M5 12h14', 'M13 6l6 6-6 6']} size={12} width={2} />
+      </button>
     );
   }
 

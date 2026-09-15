@@ -149,6 +149,30 @@ async function validateConditions(table, rawConditions) {
 }
 
 /**
+ * Models phrase the same operation in a few shapes. All of these mean one thing:
+ *   {"type":"add_column","name":"x"}
+ *   {"type":"add_column","add_column":{"name":"x"}}
+ *   {"add_column":{"name":"x"}}
+ * Collapse them to the first before validating, rather than rejecting a correct
+ * answer over punctuation and making the model retry.
+ */
+function normaliseShape(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  let out = { ...raw };
+  if (!out.type) {
+    const keys = Object.keys(out).filter((k) => OPERATIONS[k.toLowerCase()]);
+    if (keys.length === 1) out = { type: keys[0].toLowerCase(), ...out };
+  }
+  const type = String(out.type || '').toLowerCase();
+  const nested = out[type];
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    out = { ...nested, ...out, type };
+    delete out[type];
+  }
+  return out;
+}
+
+/**
  * Takes whatever the model produced and returns a validated operation, or
  * throws with a message a non-technical user can act on.
  */
@@ -156,7 +180,12 @@ async function validateOperation(table, raw) {
   assertTable(table);
   if (!raw || typeof raw !== 'object') throw badRequest('I could not work out what to do with that.');
 
+  raw = normaliseShape(raw);
   const type = String(raw.type || '').toLowerCase();
+  if (raw[type] && typeof raw[type] === 'object' && !Array.isArray(raw[type])) {
+    raw = { ...raw[type], ...raw, type };
+    delete raw[type];
+  }
   if (!OPERATIONS[type]) {
     throw badRequest(
       `I can sort, filter, add or rename a column, change values, or summarise. I couldn't map that request onto one of those.`
@@ -259,5 +288,5 @@ function changesSchema(op) {
 
 module.exports = {
   OPERATIONS, OPERATORS, COLUMN_TYPES, AGGREGATES, PROTECTED_COLUMNS,
-  validateOperation, describe, isDestructive, changesSchema, normaliseColumnName,
+  validateOperation, normaliseShape, describe, isDestructive, changesSchema, normaliseColumnName,
 };

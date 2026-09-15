@@ -3,7 +3,7 @@ const {
   TABLE_META, ToolError, meta, normaliseSort, resolveRecord, compact, tableBlock,
 } = require('./records');
 const { describeTable } = require('../tables');
-const { validateOperation, describe: describeOperation, isDestructive } = require('../nlq/operations');
+const { validateOperation, normaliseShape, describe: describeOperation, isDestructive } = require('../nlq/operations');
 const { preview: previewOperation, apply: applyOperation } = require('../nlq/execute');
 
 /**
@@ -748,7 +748,8 @@ const TOOLS = {
       table: { type: 'string', enum: ['products', 'customers', 'suppliers', 'sales', 'purchase_orders'] },
       operation: { type: 'object' },
     }, ['table', 'operation']),
-    async prepare({ table, operation }) {
+    async prepare({ table, operation: rawOperation }) {
+      const operation = normaliseShape(rawOperation);
       if (!['add_column', 'rename_column', 'drop_column', 'set_values'].includes(operation?.type)) {
         throw new ToolError('operation.type must be add_column, rename_column, drop_column or set_values.');
       }
