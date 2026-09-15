@@ -277,3 +277,67 @@ load with zero console errors.
   stop there. A shop with more than 200 products needs those to become
   type-to-search.
 - Auth still deferred.
+
+---
+
+## 2026-09-15 — Phase 2 extension 2: charts, sample data, quick actions
+
+### Sample data
+
+Was five products and one sale, which made every chart a single bar. Now 18
+products over four categories, 8 customers, ~125 sales across 75 days with a
+weekday/weekend rhythm and a slight upward drift, unpaid and part-paid sales,
+three purchase orders in different states, and the low-stock alerts those
+levels would really have raised.
+
+**It uses a seeded generator** (`makeRandom`) so the data varies but is
+identical every run — screenshots and bug reports stay reproducible. Don't
+replace it with `Math.random()`.
+
+Backdated sales deliberately **do not** decrement stock: the quantities in
+`PRODUCTS` are the current on-hand figures, and a sale from six weeks ago is
+already accounted for in them.
+
+### Charts
+
+Hand-rolled SVG in `components/charts.jsx` — no charting dependency. Area chart
+with a crosshair that follows the pointer across the plot (not a hit on the 1px
+line), horizontal bars, a stacked share bar, a sparkline.
+
+**Colour was picked by rule, and the rules are load-bearing:**
+- Single-measure-across-categories charts use **one hue**. The categories are
+  already labelled, so colour there would be decoration, not information.
+- Only the share bar needs categorical hues. Those four slots were run through
+  a CVD validator (worst adjacent ΔE 9.1 protan, 22.9 normal vision) and are
+  **assigned in fixed order, never cycled** — a fifth category folds into
+  "Other" rather than inventing a hue that no longer separates.
+- Three slots sit under 3:1 against the light surface, so that chart always
+  ships its legend with percentages, and the revenue chart has a
+  **"show as table" toggle**. Don't remove either — they are the relief for
+  that contrast finding.
+- Direction on the pulse cards carries an **arrow as well as a colour**.
+
+Palette tokens live in `index.css` as CSS variables so Phase 3's dark mode is a
+value swap, not a rewrite. The reference palette has dark steps for the same
+eight hues — use those rather than flipping the light ones.
+
+### Layout bug found while testing
+
+The body and `<main>` were **both** scrollable, so scrolling tore the sidebar
+and header away from the viewport. The shell is now `h-screen overflow-hidden`
+with only the content column scrolling. Don't reintroduce `min-h-screen` there.
+
+### Quick actions added
+
+- **Restock suggestion** groups everything below its reorder level by supplier
+  and builds the order. Suggested quantity tops each item up to twice its
+  reorder level — crude but honest, and editable.
+- **Product detail** (click a product name): units sold, revenue, margin, trend,
+  what's on order, recent sales, attached files.
+- **Mark paid** is one click from the sales list.
+
+### Also
+
+Top bar with business name, an alerts badge counting queued messages, and a
+profile menu. **Accounts are not built, and the menu says so** rather than
+offering a dead button. Wire real accounts here when auth lands.
