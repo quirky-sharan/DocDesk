@@ -103,6 +103,15 @@ async function describeTable(table) {
   return columns;
 }
 
+/**
+ * Schema is cached per table, so anything that alters a table must clear it or
+ * later requests validate against a shape that no longer exists.
+ */
+function invalidateSchemaCache(table) {
+  if (table) columnCache.delete(table);
+  else columnCache.clear();
+}
+
 async function assertColumn(table, column) {
   const columns = await describeTable(table);
   if (!columns.some((c) => c.name === column)) {
@@ -235,5 +244,5 @@ function readListQuery(query = {}) {
 
 module.exports = {
   TABLES, assertTable, assertColumn, describeTable, listRows, readListQuery, badRequest,
-  MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE,
+  invalidateSchemaCache, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE,
 };

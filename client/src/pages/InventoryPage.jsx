@@ -6,6 +6,7 @@ import {
   ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
 import ProductDetail from '../components/ProductDetail';
+import AskBar from '../components/AskBar';
 
 const BLANK = {
   name: '', sku: '', category: '', unit: 'unit',
@@ -51,6 +52,27 @@ export default function InventoryPage() {
 
   async function afterChange() {
     await Promise.all([list.reload(), refreshAside()]);
+  }
+
+  // A sort or filter from the ask bar changes what is on screen; anything that
+  // altered the table just needs a reload.
+  function handleAsk(outcome) {
+    if (outcome.kind === 'changed') {
+      afterChange();
+      return;
+    }
+    const op = outcome.operation;
+    if (op?.type === 'sort') {
+      list.setSort(op.column);
+      list.setDir(op.direction);
+      list.setPage(1);
+    } else if (op?.type === 'filter') {
+      // The list endpoint understands category and stock filters directly;
+      // anything else falls back to a search so the user still sees a change.
+      const condition = op.conditions[0];
+      if (condition.column === 'category') setCategory(String(condition.value));
+      else list.setSearch(String(condition.value));
+    }
   }
 
   async function save(form) {
@@ -116,6 +138,8 @@ export default function InventoryPage() {
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
+
+      <AskBar table="products" onView={handleAsk} />
 
       {summary && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

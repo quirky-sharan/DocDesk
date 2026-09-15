@@ -1,9 +1,17 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment variables - NEVER commit these, they hold API keys.
+# The .env.example files ARE committed; they are templates with no real values.
 .env
-.env.local
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+client/.env
+client/.env.*
+!client/.env.example
 
 # Build outputs
 dist/

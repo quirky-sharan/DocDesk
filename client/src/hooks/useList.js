@@ -72,7 +72,9 @@ export function useList(fetcher, { initialSort, initialDir = 'asc', filters = {}
   return {
     rows, meta, loading, error, setError,
     search, setSearch,
-    sort, dir, toggleSort,
+    // setSort/setDir are exposed so the ask bar can drive sorting directly,
+    // not just the column headers.
+    sort, dir, toggleSort, setSort, setDir,
     page, setPage,
     reload: load,
   };

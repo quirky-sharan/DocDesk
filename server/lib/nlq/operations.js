@@ -1,0 +1,263 @@
+const { assertTable, describeTable, badRequest } = require('../tables');
+
+/**
+ * The vocabulary of things a natural-language request is allowed to become.
+ *
+ * The model NEVER emits SQL. It picks one of these operations and fills in its
+ * fields; this module then validates every identifier against the live schema
+ * and the executor builds the statement itself. That is the whole safety story:
+ * a hallucinated or hostile model response can at worst be a rejected
+ * operation, never an executed statement.
+ */
+
+const OPERATIONS = {
+  sort: {
+    label: 'Sort rows',
+    destructive: false,
+    // Wording follows the column type: "lowest first" is meaningless for a
+    // name, and "A to Z" is meaningless for a price.
+    describe: (op) => {
+      const order = op.isText
+        ? op.direction === 'desc' ? 'Z to A' : 'A to Z'
+        : op.direction === 'desc' ? 'highest first' : 'lowest first';
+      return `Sort by ${op.column}, ${order}`;
+    },
+  },
+  filter: {
+    label: 'Show only matching rows',
+    destructive: false,
+    describe: (op) =>
+      `Show only rows where ${op.match === 'any' ? 'any' : 'all'} of: ` +
+      op.conditions.map((c) => `${c.column} ${c.operator} ${c.value}`).join(', '),
+  },
+  add_column: {
+    label: 'Add a column',
+    destructive: false,
+    changesSchema: true,
+    describe: (op) => `Add a new ${op.columnType} column called "${op.name}"`,
+  },
+  rename_column: {
+    label: 'Rename a column',
+    destructive: false,
+    changesSchema: true,
+    describe: (op) => `Rename "${op.from}" to "${op.to}"`,
+  },
+  drop_column: {
+    label: 'Delete a column',
+    destructive: true,
+    changesSchema: true,
+    describe: (op) => `Permanently delete the "${op.name}" column and everything in it`,
+  },
+  set_values: {
+    label: 'Change values',
+    destructive: true,
+    describe: (op) => {
+      const target = op.conditions?.length
+        ? `rows where ${op.conditions.map((c) => `${c.column} ${c.operator} ${c.value}`).join(' and ')}`
+        : 'every row';
+      return `Set ${op.assignments.map((a) => `${a.column} to ${a.value}`).join(', ')} on ${target}`;
+    },
+  },
+  summarize: {
+    label: 'Summarise',
+    destructive: false,
+    describe: (op) =>
+      `${op.metrics.map((m) => `${m.fn} of ${m.column === '*' ? 'rows' : m.column}`).join(', ')}` +
+      (op.groupBy ? `, grouped by ${op.groupBy}` : ''),
+  },
+};
+
+const OPERATORS = {
+  '=': '=',
+  '!=': '!=',
+  '>': '>',
+  '>=': '>=',
+  '<': '<',
+  '<=': '<=',
+  contains: 'LIKE',
+  starts_with: 'LIKE',
+  is_empty: 'IS NULL',
+  is_not_empty: 'IS NOT NULL',
+};
+
+// Portable column types. Both drivers accept these spellings.
+const COLUMN_TYPES = {
+  text: { sqlite: 'TEXT', postgres: 'TEXT' },
+  number: { sqlite: 'REAL', postgres: 'NUMERIC(14,2)' },
+  integer: { sqlite: 'INTEGER', postgres: 'INTEGER' },
+  date: { sqlite: 'TEXT', postgres: 'DATE' },
+  boolean: { sqlite: 'INTEGER', postgres: 'BOOLEAN' },
+};
+
+const AGGREGATES = { count: 'COUNT', sum: 'SUM', avg: 'AVG', min: 'MIN', max: 'MAX' };
+
+// Columns the app's own logic depends on. The model may read them but must not
+// rename, drop or overwrite them, or the rest of DocDesk stops working.
+const PROTECTED_COLUMNS = new Set(['id', 'created_at', 'updated_at', 'reference', 'sale_id', 'purchase_order_id']);
+
+function normaliseColumnName(raw) {
+  const name = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!/^[a-z][a-z0-9_]{0,40}$/.test(name)) {
+    throw badRequest(
+      `"${raw}" is not a usable column name. Use letters, numbers and spaces, starting with a letter.`
+    );
+  }
+  return name;
+}
+
+async function columnNames(table) {
+  return (await describeTable(table)).map((c) => c.name);
+}
+
+async function assertExisting(table, column, label = 'column') {
+  const names = await columnNames(table);
+  const wanted = String(column || '').trim().toLowerCase();
+  const match = names.find((n) => n.toLowerCase() === wanted);
+  if (!match) {
+    throw badRequest(
+      `There is no ${label} called "${column}". Available: ${names.filter((n) => !n.startsWith('_')).join(', ')}`
+    );
+  }
+  return match;
+}
+
+function assertUnprotected(column, verb) {
+  if (PROTECTED_COLUMNS.has(column)) {
+    throw badRequest(`"${column}" is used by DocDesk itself and can't be ${verb}.`);
+  }
+}
+
+async function validateConditions(table, rawConditions) {
+  const conditions = [];
+  for (const raw of rawConditions || []) {
+    const column = await assertExisting(table, raw.column);
+    const operator = String(raw.operator || '=').toLowerCase();
+    if (!OPERATORS[operator]) {
+      throw badRequest(`"${raw.operator}" isn't a comparison I understand.`);
+    }
+    const needsValue = operator !== 'is_empty' && operator !== 'is_not_empty';
+    if (needsValue && (raw.value === undefined || raw.value === null || raw.value === '')) {
+      throw badRequest(`The comparison on "${column}" is missing a value.`);
+    }
+    conditions.push({ column, operator, value: needsValue ? raw.value : null });
+  }
+  return conditions;
+}
+
+/**
+ * Takes whatever the model produced and returns a validated operation, or
+ * throws with a message a non-technical user can act on.
+ */
+async function validateOperation(table, raw) {
+  assertTable(table);
+  if (!raw || typeof raw !== 'object') throw badRequest('I could not work out what to do with that.');
+
+  const type = String(raw.type || '').toLowerCase();
+  if (!OPERATIONS[type]) {
+    throw badRequest(
+      `I can sort, filter, add or rename a column, change values, or summarise. I couldn't map that request onto one of those.`
+    );
+  }
+
+  switch (type) {
+    case 'sort': {
+      const column = await assertExisting(table, raw.column);
+      const meta = (await describeTable(table)).find((c) => c.name === column);
+      return {
+        type,
+        column,
+        direction: String(raw.direction || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc',
+        isText: /char|text|clob/i.test(meta?.type || ''),
+      };
+    }
+
+    case 'filter': {
+      const conditions = await validateConditions(table, raw.conditions);
+      if (!conditions.length) throw badRequest('That filter had no conditions in it.');
+      return { type, conditions, match: raw.match === 'any' ? 'any' : 'all' };
+    }
+
+    case 'add_column': {
+      const name = normaliseColumnName(raw.name);
+      const existing = await columnNames(table);
+      if (existing.some((n) => n.toLowerCase() === name)) {
+        throw badRequest(`There is already a column called "${name}".`);
+      }
+      const columnType = String(raw.type_hint || raw.column_type || 'text').toLowerCase();
+      if (!COLUMN_TYPES[columnType]) {
+        throw badRequest(`"${columnType}" isn't a column type I can create.`);
+      }
+      return { type, name, columnType, label: String(raw.name).trim() };
+    }
+
+    case 'rename_column': {
+      const from = await assertExisting(table, raw.from);
+      assertUnprotected(from, 'renamed');
+      const to = normaliseColumnName(raw.to);
+      const existing = await columnNames(table);
+      if (existing.some((n) => n.toLowerCase() === to)) {
+        throw badRequest(`There is already a column called "${to}".`);
+      }
+      return { type, from, to };
+    }
+
+    case 'drop_column': {
+      const name = await assertExisting(table, raw.name);
+      assertUnprotected(name, 'deleted');
+      return { type, name };
+    }
+
+    case 'set_values': {
+      const assignments = [];
+      for (const raw_ of raw.assignments || []) {
+        const column = await assertExisting(table, raw_.column);
+        assertUnprotected(column, 'changed this way');
+        assignments.push({ column, value: raw_.value ?? null });
+      }
+      if (!assignments.length) throw badRequest('That change had no new values in it.');
+      return { type, assignments, conditions: await validateConditions(table, raw.conditions) };
+    }
+
+    case 'summarize': {
+      const metrics = [];
+      for (const metric of raw.metrics || []) {
+        const fn = String(metric.fn || 'count').toLowerCase();
+        if (!AGGREGATES[fn]) throw badRequest(`"${metric.fn}" isn't a summary I can calculate.`);
+        const column = metric.column === '*' || fn === 'count' && !metric.column
+          ? '*'
+          : await assertExisting(table, metric.column);
+        metrics.push({ fn, column });
+      }
+      if (!metrics.length) metrics.push({ fn: 'count', column: '*' });
+      return {
+        type,
+        metrics,
+        groupBy: raw.group_by || raw.groupBy ? await assertExisting(table, raw.group_by || raw.groupBy) : null,
+      };
+    }
+
+    default:
+      throw badRequest('That is not something I can do.');
+  }
+}
+
+function describe(op) {
+  return OPERATIONS[op.type].describe(op);
+}
+
+function isDestructive(op) {
+  return Boolean(OPERATIONS[op.type]?.destructive);
+}
+
+function changesSchema(op) {
+  return Boolean(OPERATIONS[op.type]?.changesSchema);
+}
+
+module.exports = {
+  OPERATIONS, OPERATORS, COLUMN_TYPES, AGGREGATES, PROTECTED_COLUMNS,
+  validateOperation, describe, isDestructive, changesSchema, normaliseColumnName,
+};

@@ -109,6 +109,11 @@ export const api = {
     update: (id, payload) => send(`/files/${id}`, 'PUT', payload),
     remove: (id) => request(`/files/${id}`, { method: 'DELETE' }),
   },
+  ai: {
+    status: () => request('/ai/status'),
+    interpret: (table, req) => send('/ai/interpret', 'POST', { table, request: req }),
+    apply: (table, operation) => send('/ai/apply', 'POST', { table, operation }),
+  },
   settings: {
     get: () => request('/settings'),
     update: (payload) => send('/settings', 'PUT', payload),

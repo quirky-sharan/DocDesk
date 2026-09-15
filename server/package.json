@@ -8,7 +8,8 @@
     "dev": "nodemon index.js",
     "migrate": "node db/migrate.js",
     "seed": "node db/seed.js",
-    "seed:clear": "node db/seed.js clear"
+    "seed:clear": "node db/seed.js clear",
+    "bench:ai": "node lib/nlq/bench.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
