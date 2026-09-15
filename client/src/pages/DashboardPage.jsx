@@ -1,34 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-
-const TABLE_LABELS = {
-  products: 'Products',
-  customers: 'Customers',
-  sales: 'Sales',
-  sale_items: 'Sale line items',
-  suppliers: 'Suppliers',
-  purchase_orders: 'Purchase orders',
-  message_log: 'Queued messages',
-};
+import { PageHeader, ErrorNote, Badge, Money } from '../components/ui';
 
 export default function DashboardPage() {
-  const [health, setHealth] = useState(null);
-  const [stats, setStats] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [sales, setSales] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [h, s] = await Promise.all([api.health(), api.stats()]);
-      setHealth(h);
-      setStats(s);
+      const [sum, recentSales, queued] = await Promise.all([
+        api.products.summary(),
+        api.sales.list({ limit: 5, sort: 'created_at', dir: 'desc' }),
+        api.messages.list({ status: 'queued', limit: 5 }),
+      ]);
+      setSummary(sum);
+      setSales(recentSales.rows);
+      setMessages(queued.rows);
+      setError(null);
     } catch (err) {
       setError(err.message);
-      setHealth(null);
-      setStats(null);
+      setSummary(null);
     } finally {
       setLoading(false);
     }
@@ -38,11 +35,10 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
-  async function runSampleAction(action) {
+  async function addSampleData() {
     setBusy(true);
-    setError(null);
     try {
-      await action();
+      await api.seed();
       await load();
     } catch (err) {
       setError(err.message);
@@ -51,108 +47,132 @@ export default function DashboardPage() {
     }
   }
 
-  const connected = Boolean(health);
-  const hasRecords = stats
-    ? Object.values(stats.counts).some((n) => n > 0)
-    : false;
+  const isEmpty = summary && summary.total === 0 && sales.length === 0;
+  const salesTotal = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="mt-1 text-slate-500">
-          Phase 1 checks that the browser, the API and the database are all talking.
-        </p>
-      </header>
+    <div>
+      <PageHeader title="Dashboard" subtitle="How the shop is doing right now.">
+        <button className="btn-secondary" onClick={load} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </PageHeader>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          <p className="font-semibold">Something went wrong</p>
-          <p className="mt-1 text-sm">{error}</p>
+      <ErrorNote error={error} onDismiss={() => setError(null)} />
+
+      {isEmpty && (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-8 text-center">
+          <p className="text-lg font-medium">Nothing here yet</p>
+          <p className="mt-1 text-slate-500">
+            Add your products one at a time, or drop in some sample data to look around first.
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Link className="btn-primary" to="/inventory">Add a product</Link>
+            <button className="btn-secondary" onClick={addSampleData} disabled={busy}>
+              {busy ? 'Adding…' : 'Use sample data'}
+            </button>
+          </div>
         </div>
       )}
 
-      <section className="card mb-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Connection</h2>
-          <button className="btn-secondary" onClick={load} disabled={loading || busy}>
-            {loading ? 'Checking…' : 'Re-check'}
-          </button>
-        </div>
-
-        <ul className="space-y-3">
-          <StatusRow label="Web app" ok={true} detail="Running in your browser" />
-          <StatusRow
-            label="API server"
-            ok={connected}
-            detail={connected ? `Up for ${health.uptimeSeconds}s` : 'Not reachable'}
-          />
-          <StatusRow
-            label="Database"
-            ok={connected && health.database.connected}
-            detail={
-              connected
-                ? `${health.database.driver} · ${health.database.tables} tables · ${health.database.latencyMs}ms`
-                : 'Unknown'
-            }
-          />
-        </ul>
-      </section>
-
-      <section className="card">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Stored records</h2>
-          <div className="flex gap-2">
-            <button
-              className="btn-primary"
-              onClick={() => runSampleAction(api.seed)}
-              disabled={busy || !connected || hasRecords}
-              title={hasRecords ? 'Clear the existing records first' : undefined}
-            >
-              {busy ? 'Working…' : 'Add sample data'}
-            </button>
-            <button
-              className="btn-danger"
-              onClick={() => runSampleAction(api.clearSeed)}
-              disabled={busy || !connected || !hasRecords}
-            >
-              Clear all
-            </button>
+      {summary && !isEmpty && (
+        <>
+          <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Card label="Products" value={summary.total} to="/inventory" />
+            <Card label="Low stock" value={summary.lowStock} tone="amber" to="/inventory" />
+            <Card label="Out of stock" value={summary.outOfStock} tone="red" to="/inventory" />
+            <Card label="Stock value" value={Number(summary.stockValue).toFixed(2)} />
           </div>
-        </div>
 
-        {stats ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {Object.entries(stats.counts).map(([table, count]) => (
-              <div key={table} className="rounded-lg border border-slate-200 p-4">
-                <p className="text-2xl font-semibold">{count}</p>
-                <p className="text-sm text-slate-500">{TABLE_LABELS[table] || table}</p>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section className="card">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Needs restocking</h2>
+                <Link className="text-sm text-blue-600 hover:underline" to="/orders">Order stock</Link>
               </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-slate-500">{loading ? 'Loading…' : 'No data to show.'}</p>
-        )}
+              {summary.needsAttention.length === 0 ? (
+                <p className="text-slate-500">Everything is above its reorder level.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {summary.needsAttention.slice(0, 6).map((p) => (
+                    <li key={p.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
+                      <div>
+                        <p className="font-medium">{p.name}</p>
+                        <p className="text-xs text-slate-500">Reorder at {p.reorder_level}</p>
+                      </div>
+                      <Badge tone={p.stock_quantity <= 0 ? 'red' : 'amber'}>
+                        {p.stock_quantity <= 0 ? 'Out of stock' : `${p.stock_quantity} left`}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-        <p className="mt-4 text-sm text-slate-500">
-          Numbers come straight from the database. Add sample data, then restart the
-          server — the counts stay, which proves the data is really being saved.
-        </p>
-      </section>
+            <section className="card">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Latest sales</h2>
+                <Link className="text-sm text-blue-600 hover:underline" to="/sales">All sales</Link>
+              </div>
+              {sales.length === 0 ? (
+                <p className="text-slate-500">No sales recorded yet.</p>
+              ) : (
+                <>
+                  <ul className="space-y-2">
+                    {sales.map((s) => (
+                      <li key={s.id} className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0">
+                        <div>
+                          <p className="font-medium">{s.reference}</p>
+                          <p className="text-xs text-slate-500">
+                            {s.customer_name || 'Walk-in'} · {new Date(s.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className="font-medium"><Money value={s.total} /></span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-3 text-sm text-slate-500">
+                    Last {sales.length} sales total <strong>{salesTotal.toFixed(2)}</strong>.
+                  </p>
+                </>
+              )}
+            </section>
+          </div>
+
+          {messages.length > 0 && (
+            <section className="card mt-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Waiting to be sent</h2>
+                <Link className="text-sm text-blue-600 hover:underline" to="/messages">View all</Link>
+              </div>
+              <ul className="space-y-2">
+                {messages.map((m) => (
+                  <li key={m.id} className="border-b border-slate-100 pb-2 last:border-0">
+                    <p className="font-medium">{m.subject}</p>
+                    <p className="text-xs text-slate-500">{m.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function StatusRow({ label, ok, detail }) {
-  return (
-    <li className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-      <div className="flex items-center gap-3">
-        <span
-          className={`inline-block h-2.5 w-2.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`}
-        />
-        <span className="font-medium">{label}</span>
-      </div>
-      <span className="text-sm text-slate-500">{detail}</span>
-    </li>
+function Card({ label, value, tone, to }) {
+  const toneClass = tone === 'amber' ? 'text-amber-600' : tone === 'red' ? 'text-red-600' : '';
+  const content = (
+    <>
+      <p className={`text-2xl font-semibold ${toneClass}`}>{value}</p>
+      <p className="text-sm text-slate-500">{label}</p>
+    </>
+  );
+  const className = 'block rounded-lg border border-slate-200 bg-white p-4';
+  return to ? (
+    <Link to={to} className={`${className} hover:border-slate-300`}>{content}</Link>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }

@@ -29,9 +29,64 @@ async function request(path, options = {}) {
   return body;
 }
 
+function query(params = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, value);
+  }
+  const string = search.toString();
+  return string ? `?${string}` : '';
+}
+
+const send = (path, method, payload) =>
+  request(path, { method, body: JSON.stringify(payload ?? {}) });
+
+function resource(path) {
+  return {
+    list: (params) => request(`${path}${query(params)}`),
+    get: (id) => request(`${path}/${id}`),
+    create: (payload) => send(path, 'POST', payload),
+    update: (id, payload) => send(`${path}/${id}`, 'PUT', payload),
+    remove: (id) => request(`${path}/${id}`, { method: 'DELETE' }),
+  };
+}
+
 export const api = {
   health: () => request('/health'),
   stats: () => request('/stats'),
   seed: () => request('/dev/seed', { method: 'POST' }),
   clearSeed: () => request('/dev/seed', { method: 'DELETE' }),
+
+  products: {
+    ...resource('/products'),
+    summary: () => request('/products/summary'),
+    adjustStock: (id, change, reason) => send(`/products/${id}/stock`, 'POST', { change, reason }),
+  },
+  customers: resource('/customers'),
+  suppliers: resource('/suppliers'),
+  sales: {
+    ...resource('/sales'),
+    receipt: (id) => request(`/sales/${id}/receipt`),
+  },
+  purchaseOrders: {
+    ...resource('/purchase-orders'),
+    receive: (id, items) => send(`/purchase-orders/${id}/receive`, 'POST', items ? { items } : {}),
+  },
+  messages: {
+    list: (params) => request(`/messages${query(params)}`),
+    send: () => request('/messages/send', { method: 'POST' }),
+    remove: (id) => request(`/messages/${id}`, { method: 'DELETE' }),
+  },
 };
+
+// Downloads go through a plain link rather than fetch: the browser handles the
+// Content-Disposition filename and the save dialog for free, and the file never
+// has to pass through JS memory.
+export function exportUrl(table, format, params = {}) {
+  return `${BASE}/export/${table}${query({ format, ...params })}`;
+}
+
+export function receiptPdfUrl(saleId) {
+  return `${BASE}/sales/${saleId}/receipt.pdf`;
+}
