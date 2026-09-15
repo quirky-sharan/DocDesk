@@ -200,3 +200,116 @@ exports.summary = async (req, res, next) => {
     next(err);
   }
 };
+
+// One product's trading history: how it has sold, what is on order, and what
+// is attached to it. The question a shopkeeper asks before reordering.
+exports.history = async (req, res, next) => {
+  try {
+    const product = await findOrFail(req.params.id);
+    const day = db.name === 'postgres'
+      ? "TO_CHAR(s.created_at, 'YYYY-MM-DD')"
+      : 'SUBSTR(s.created_at, 1, 10)';
+
+    const { rows: sales } = await db.query(
+      `SELECT s.id, s.reference, s.created_at, si.quantity, si.unit_price, si.line_total
+       FROM sale_items si JOIN sales s ON s.id = si.sale_id
+       WHERE si.product_id = $1 ORDER BY s.created_at DESC LIMIT 20`,
+      [product.id]
+    );
+
+    const { rows: totals } = await db.query(
+      `SELECT COALESCE(SUM(si.quantity), 0) AS units,
+              COALESCE(SUM(si.line_total), 0) AS revenue,
+              COUNT(DISTINCT si.sale_id) AS sale_count
+       FROM sale_items si WHERE si.product_id = $1`,
+      [product.id]
+    );
+
+    const { rows: trend } = await db.query(
+      `SELECT ${day} AS day, SUM(si.quantity) AS units
+       FROM sale_items si JOIN sales s ON s.id = si.sale_id
+       WHERE si.product_id = $1
+       GROUP BY ${day} ORDER BY day DESC LIMIT 30`,
+      [product.id]
+    );
+
+    const { rows: incoming } = await db.query(
+      `SELECT po.reference, po.status, po.expected_date,
+              poi.quantity, poi.quantity_received
+       FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id
+       WHERE poi.product_id = $1 AND po.status NOT IN ('received', 'cancelled')
+       ORDER BY po.created_at DESC`,
+      [product.id]
+    );
+
+    const { rows: files } = await db.query(
+      `SELECT id, original_name, mime_type, size_bytes FROM files
+       WHERE related_type = 'product' AND related_id = $1 ORDER BY created_at DESC`,
+      [product.id]
+    );
+
+    res.json({
+      product,
+      unitsSold: Number(totals[0].units),
+      revenue: money(totals[0].revenue),
+      saleCount: Number(totals[0].sale_count),
+      trend: trend.reverse().map((t) => ({ day: t.day, units: Number(t.units) })),
+      sales,
+      incoming,
+      files,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Everything at or below its reorder level, with a suggested quantity and the
+ * supplier to buy it from - enough to build a purchase order in one click.
+ *
+ * Suggested quantity tops the item back up to twice its reorder level, which is
+ * a crude but honest default; the user edits it before ordering anyway.
+ */
+exports.restockSuggestion = async (req, res, next) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT p.id, p.sku, p.name, p.stock_quantity, p.reorder_level, p.cost_price,
+              p.supplier_id, s.name AS supplier_name
+       FROM products p LEFT JOIN suppliers s ON s.id = p.supplier_id
+       WHERE p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level
+       ORDER BY (p.stock_quantity - p.reorder_level) ASC, p.name ASC`
+    );
+
+    const items = rows.map((r) => {
+      const target = Number(r.reorder_level) * 2;
+      return {
+        productId: r.id,
+        sku: r.sku,
+        name: r.name,
+        stockQuantity: Number(r.stock_quantity),
+        reorderLevel: Number(r.reorder_level),
+        suggestedQuantity: Math.max(target - Number(r.stock_quantity), 1),
+        unitCost: money(r.cost_price),
+        supplierId: r.supplier_id,
+        supplierName: r.supplier_name,
+      };
+    });
+
+    // Grouped by supplier, because you place one order per supplier.
+    const bySupplier = [];
+    for (const item of items) {
+      const key = item.supplierId ?? 'none';
+      let group = bySupplier.find((g) => String(g.supplierId ?? 'none') === String(key));
+      if (!group) {
+        group = { supplierId: item.supplierId, supplierName: item.supplierName, items: [], total: 0 };
+        bySupplier.push(group);
+      }
+      group.items.push(item);
+      group.total = money(group.total + item.suggestedQuantity * item.unitCost);
+    }
+
+    res.json({ count: items.length, items, bySupplier });
+  } catch (err) {
+    next(err);
+  }
+};

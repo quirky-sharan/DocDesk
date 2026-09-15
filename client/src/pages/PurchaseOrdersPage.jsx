@@ -14,6 +14,8 @@ export default function PurchaseOrdersPage() {
   const [creating, setCreating] = useState(false);
   const [receiving, setReceiving] = useState(null);
   const [status, setStatus] = useState('');
+  const [restock, setRestock] = useState(null);
+  const [lowCount, setLowCount] = useState(0);
 
   const fetcher = useCallback((params) => api.purchaseOrders.list(params), []);
   const list = useList(fetcher, {
@@ -22,10 +24,22 @@ export default function PurchaseOrdersPage() {
     filters: { status },
   });
 
+  useEffect(() => {
+    api.products.restockSuggestion().then((d) => setLowCount(d.count)).catch(() => {});
+  }, [list.meta.total]);
+
   async function remove(id) {
     try {
       await api.purchaseOrders.remove(id);
       await list.reload();
+    } catch (err) {
+      list.setError(err.message);
+    }
+  }
+
+  async function openRestock() {
+    try {
+      setRestock(await api.products.restockSuggestion());
     } catch (err) {
       list.setError(err.message);
     }
@@ -53,6 +67,11 @@ export default function PurchaseOrdersPage() {
     <div>
       <PageHeader title="Incoming stock" subtitle="What you've ordered and what's arrived.">
         <ExportButtons table="purchase_orders" params={{ search: list.search, sort: list.sort, dir: list.dir }} />
+        {lowCount > 0 && (
+          <button className="btn-secondary" onClick={openRestock}>
+            Restock {lowCount} low item{lowCount === 1 ? '' : 's'}
+          </button>
+        )}
         <button className="btn-primary" onClick={() => setCreating(true)}>New order</button>
       </PageHeader>
 
@@ -87,6 +106,17 @@ export default function PurchaseOrdersPage() {
 
       {creating && (
         <NewOrder onClose={() => setCreating(false)} onDone={async () => { setCreating(false); await list.reload(); }} />
+      )}
+      {restock && (
+        <RestockModal
+          suggestion={restock}
+          onClose={() => setRestock(null)}
+          onDone={async () => {
+            setRestock(null);
+            await list.reload();
+          }}
+          onError={list.setError}
+        />
       )}
       {receiving && (
         <ReceiveOrder
@@ -318,6 +348,118 @@ function ReceiveOrder({ orderId, onClose, onDone }) {
           </div>
         </form>
       )}
+    </Modal>
+  );
+}
+
+/**
+ * Turns "these things are low" into an actual order. One order per supplier,
+ * because that is how they get placed; quantities are editable because the
+ * suggestion is a starting point, not a decision.
+ */
+function RestockModal({ suggestion, onClose, onDone, onError }) {
+  const [groupIndex, setGroupIndex] = useState(0);
+  const [quantities, setQuantities] = useState(() => {
+    const initial = {};
+    for (const item of suggestion.items) initial[item.productId] = item.suggestedQuantity;
+    return initial;
+  });
+  const [busy, setBusy] = useState(false);
+
+  const group = suggestion.bySupplier[groupIndex];
+  if (!group) return null;
+
+  const total = group.items.reduce(
+    (sum, i) => sum + Number(quantities[i.productId] || 0) * i.unitCost,
+    0
+  );
+
+  async function create() {
+    setBusy(true);
+    try {
+      const items = group.items
+        .filter((i) => Number(quantities[i.productId]) > 0)
+        .map((i) => ({
+          product_id: i.productId,
+          quantity: Number(quantities[i.productId]),
+          unit_cost: i.unitCost,
+        }));
+      if (!items.length) throw new Error('Set a quantity for at least one item.');
+      await api.purchaseOrders.create({
+        supplier_id: group.supplierId || null,
+        status: 'ordered',
+        items,
+      });
+      await onDone();
+    } catch (err) {
+      onError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Restock what's running low" onClose={onClose} wide>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          {suggestion.count} item{suggestion.count === 1 ? ' is' : 's are'} at or below their
+          reorder level. Orders go to one supplier at a time — quantities are a suggestion,
+          change anything you like.
+        </p>
+
+        {suggestion.bySupplier.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            {suggestion.bySupplier.map((g, i) => (
+              <button
+                key={g.supplierId ?? 'none'}
+                type="button"
+                onClick={() => setGroupIndex(i)}
+                className={i === groupIndex ? 'btn-primary' : 'btn-secondary'}
+              >
+                {g.supplierName || 'No supplier'} ({g.items.length})
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="rounded-lg border border-slate-200">
+          {group.items.map((item) => (
+            <div key={item.productId} className="flex items-center justify-between gap-4 border-b border-slate-100 p-3 last:border-0">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{item.name}</p>
+                <p className="text-xs text-slate-500">
+                  {item.stockQuantity} left · reorder at {item.reorderLevel} · {item.unitCost.toFixed(2)} each
+                </p>
+              </div>
+              <input
+                className="input-field w-24 shrink-0"
+                type="number"
+                min="0"
+                step="1"
+                value={quantities[item.productId] ?? 0}
+                onChange={(e) =>
+                  setQuantities({ ...quantities, [item.productId]: e.target.value })
+                }
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-lg bg-slate-50 p-4 text-right">
+          <span className="text-sm text-slate-500">Order total </span>
+          <span className="text-lg font-semibold">{total.toFixed(2)}</span>
+        </div>
+
+        <p className="text-sm text-slate-500">
+          This creates the order only. Stock goes up when you mark the goods as received.
+        </p>
+
+        <div className="flex justify-end gap-2">
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" onClick={create} disabled={busy}>
+            {busy ? 'Creating…' : `Order from ${group.supplierName || 'no supplier'}`}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }

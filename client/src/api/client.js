@@ -81,6 +81,8 @@ export const api = {
     adjustStock: (id, change, reason) => send(`/products/${id}/stock`, 'POST', { change, reason }),
     importPreview: (formData) => sendForm('/products/import/preview', formData),
     importCommit: (formData) => sendForm('/products/import', formData),
+    history: (id) => request(`/products/${id}/history`),
+    restockSuggestion: () => request('/products/restock-suggestion'),
   },
   customers: {
     ...resource('/customers'),

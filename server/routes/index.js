@@ -19,6 +19,7 @@ const router = express.Router();
 // parsed as an id.
 router.get('/products/summary', products.summary);
 router.get('/products/categories', products.categories);
+router.get('/products/restock-suggestion', products.restockSuggestion);
 router.post('/products/import/preview', importUpload.single('file'), importProducts.preview);
 router.post('/products/import', importUpload.single('file'), importProducts.commit);
 router.get('/products', products.list);
@@ -27,6 +28,7 @@ router.get('/products/:id', products.get);
 router.put('/products/:id', products.update);
 router.delete('/products/:id', products.remove);
 router.post('/products/:id/stock', products.adjustStock);
+router.get('/products/:id/history', products.history);
 
 router.get('/customers', customers.list);
 router.post('/customers', customers.create);

@@ -31,6 +31,17 @@ export default function SalesPage() {
     }
   }
 
+  // Settling up is the most common thing anyone does to an existing sale, so it
+  // is one click from the list rather than buried in an edit form.
+  async function markPaid(sale) {
+    try {
+      await api.sales.update(sale.id, { payment_status: 'paid' });
+      await list.reload();
+    } catch (err) {
+      list.setError(err.message);
+    }
+  }
+
   const columns = [
     { key: 'reference', label: 'Receipt', render: (s) => <span className="font-medium">{s.reference}</span> },
     { key: 'created_at', label: 'When', render: (s) => new Date(s.created_at).toLocaleString() },
@@ -41,6 +52,9 @@ export default function SalesPage() {
     { key: 'total', label: 'Total', align: 'right', render: (s) => <Money value={s.total} /> },
     { key: 'actions', label: '', sortable: false, align: 'right', render: (s) => (
       <div className="flex justify-end gap-2">
+        {s.payment_status !== 'paid' && s.payment_status !== 'refunded' && (
+          <button className="btn-edit" onClick={() => markPaid(s)}>Mark paid</button>
+        )}
         <button className="btn-edit" onClick={() => setViewing(s.id)}>Receipt</button>
         <ConfirmButton
           message={`Delete ${s.reference}? The items will go back into stock.`}

@@ -5,6 +5,7 @@ import {
   PageHeader, ErrorNote, Table, Modal, Field, Badge, Money,
   ConfirmButton, ExportButtons, SearchInput, Select, Pagination,
 } from '../components/ui';
+import ProductDetail from '../components/ProductDetail';
 
 const BLANK = {
   name: '', sku: '', category: '', unit: 'unit',
@@ -33,6 +34,7 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState(null);
   const [adjusting, setAdjusting] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [viewing, setViewing] = useState(null);
 
   const fetcher = useCallback((params) => api.products.list(params), []);
   const list = useList(fetcher, { initialSort: 'name', filters: { stock, category } });
@@ -74,10 +76,10 @@ export default function InventoryPage() {
 
   const columns = [
     { key: 'name', label: 'Product', render: (p) => (
-      <div>
-        <div className="font-medium">{p.name}</div>
+      <button type="button" className="text-left" onClick={() => setViewing(p.id)}>
+        <div className="font-medium text-blue-700 hover:underline">{p.name}</div>
         {p.sku && <div className="text-xs text-slate-400">{p.sku}</div>}
-      </div>
+      </button>
     ) },
     { key: 'category', label: 'Category', render: (p) => p.category || '—' },
     { key: 'supplier_name', label: 'Supplier', render: (p) => p.supplier_name || '—' },
@@ -162,6 +164,16 @@ export default function InventoryPage() {
             await afterChange();
           }}
           onError={list.setError}
+        />
+      )}
+      {viewing && (
+        <ProductDetail
+          productId={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(product) => {
+            setViewing(null);
+            setEditing(product);
+          }}
         />
       )}
       {importing && (
