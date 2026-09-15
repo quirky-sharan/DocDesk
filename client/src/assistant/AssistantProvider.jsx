@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api, apiUrl } from '../api/client';
 import { announceDataChanged } from '../hooks/useDataChanged';
+import { hasOpenLayer } from '../hooks/useLayer';
 
 const AssistantContext = createContext(null);
 const STORAGE_KEY = 'docdesk.assistant.v1';
@@ -56,13 +57,15 @@ export function AssistantProvider({ children }) {
     }
   }, [entries, cards]);
 
-  // Ctrl/Cmd+K opens the assistant from anywhere; Escape closes it.
+  // Ctrl/Cmd+K belongs to Spotlight, which hands sentences to the assistant.
+  // Ctrl/Cmd+J opens the assistant directly; Escape closes it when nothing
+  // (a dialog, a popover, Spotlight) is layered on top.
   useEffect(() => {
     function onKey(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
         setOpen((v) => !v);
-      } else if (e.key === 'Escape' && open && !document.querySelector('[role="dialog"]')) {
+      } else if (e.key === 'Escape' && open && !hasOpenLayer()) {
         setOpen(false);
       }
     }
