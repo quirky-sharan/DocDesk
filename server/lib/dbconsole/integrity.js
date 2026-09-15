@@ -12,6 +12,30 @@ const { fail } = require('../validate');
  * files on disk agree. Each problem that can be repaired safely comes with a fix.
  */
 
+// Products whose alerts disagree with their stock: low with no alert raised
+// since the stock was last above the reorder level (a sent alert counts - it
+// did its job), or not low with an alert still waiting.
+const ALERT_MISMATCH = `
+  SELECT p.id, p.name, (p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level) AS low
+    FROM products p
+   WHERE (
+           p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level
+           AND NOT EXISTS (
+             SELECT 1 FROM message_log m
+              WHERE m.related_type = 'product' AND m.related_id = p.id AND m.trigger_type = 'low_stock'
+                AND (m.status = 'queued' OR m.created_at >= COALESCE(
+                  (SELECT max(s.created_at) FROM stock_movements s WHERE s.product_id = p.id AND s.balance_after > p.reorder_level),
+                  p.created_at))
+           )
+         )
+      OR (
+           NOT (p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level)
+           AND EXISTS (
+             SELECT 1 FROM message_log m
+              WHERE m.related_type = 'product' AND m.related_id = p.id AND m.trigger_type = 'low_stock' AND m.status = 'queued'
+           )
+         )`;
+
 const CHECKS = [
   {
     id: 'stock_ledger',
@@ -161,24 +185,16 @@ const CHECKS = [
   {
     id: 'low_stock_alerts',
     title: 'Low-stock alerts match stock levels',
-    explain: 'Every product at or below its reorder level has one waiting alert, and no other product does.',
+    explain: 'A product that dropped to its reorder level raised an alert (waiting or already sent), and no alert is waiting for a product that has been restocked.',
     fixable: true,
     async find() {
-      const { rows } = await db.query(`
-        SELECT p.id, p.name, p.stock_quantity, p.reorder_level, (m.id IS NOT NULL) AS has_alert
-          FROM products p
-          LEFT JOIN message_log m ON m.related_type = 'product' AND m.related_id = p.id AND m.trigger_type = 'low_stock' AND m.status = 'queued'
-         WHERE (p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level) <> (m.id IS NOT NULL)
-         ORDER BY p.name`);
-      return rows.map((r) => ({ id: r.id, label: r.name, detail: r.has_alert ? 'alert waiting but stock is fine' : 'low but no alert waiting' }));
+      const { rows } = await db.query(`${ALERT_MISMATCH} ORDER BY p.name`);
+      return rows.map((r) => ({ id: r.id, label: r.name, detail: r.low ? 'low, but no alert was raised' : 'alert waiting but stock is fine' }));
     },
     // Re-applying the reorder level fires the alert trigger, which creates or
     // withdraws the alert exactly as a stock change would.
     async fix(tx) {
-      const { rowCount } = await tx.query(`
-        UPDATE products p SET reorder_level = p.reorder_level
-         WHERE (p.reorder_level > 0 AND p.stock_quantity <= p.reorder_level) <> EXISTS (
-           SELECT 1 FROM message_log m WHERE m.related_type = 'product' AND m.related_id = p.id AND m.trigger_type = 'low_stock' AND m.status = 'queued')`);
+      const { rowCount } = await tx.query(`UPDATE products SET reorder_level = reorder_level WHERE id IN (SELECT p.id FROM (${ALERT_MISMATCH}) p)`);
       return rowCount;
     },
   },

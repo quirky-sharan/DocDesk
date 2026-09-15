@@ -26,7 +26,50 @@ class EmbeddedEngine {
     this.startedAt = Date.now();
     this.restarts = 0;
     fs.mkdirSync(path.dirname(dataDir), { recursive: true });
+    this.claimLock();
     this.start();
+  }
+
+  /**
+   * One process at a time: two engines writing the same data folder would
+   * corrupt it. A lock file holds the owner's process id; a lock left by a
+   * process that no longer exists (a crash, a forced stop) is simply taken over.
+   */
+  claimLock() {
+    this.lockFile = `${this.dataDir}.lock`;
+    try {
+      const owner = Number(fs.readFileSync(this.lockFile, 'utf8').trim());
+      if (owner && owner !== process.pid) {
+        let alive = false;
+        try {
+          process.kill(owner, 0);
+          alive = true;
+        } catch (err) {
+          alive = err.code === 'EPERM';
+        }
+        if (alive) {
+          const err = new Error(
+            `The DocDesk database is already open in another program (process ${owner}). Stop DocDesk (stop_all.bat) before running this, ` +
+              `or if nothing is running, delete ${this.lockFile}.`
+          );
+          err.code = 'DB_LOCKED';
+          throw err;
+        }
+      }
+    } catch (err) {
+      if (err.code === 'DB_LOCKED') throw err;
+      // No lock file yet, or an unreadable one: ours to take.
+    }
+    fs.writeFileSync(this.lockFile, String(process.pid));
+    const release = () => {
+      try {
+        if (Number(fs.readFileSync(this.lockFile, 'utf8').trim()) === process.pid) fs.rmSync(this.lockFile, { force: true });
+      } catch {
+        // Already gone.
+      }
+    };
+    this.releaseLock = release;
+    process.once('exit', release);
   }
 
   start() {
@@ -176,6 +219,7 @@ class EmbeddedEngine {
       // Closing a database that already stopped is fine.
     }
     await this.worker.terminate().catch(() => {});
+    this.releaseLock?.();
   }
 }
 

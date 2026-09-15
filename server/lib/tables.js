@@ -239,6 +239,8 @@ async function listRows(table, options = {}) {
     if (!range?.column) continue;
     await assertColumn(table, range.column);
     if (range.timezone) {
+      // Only bind the zone when a date uses it - an unused parameter is an error.
+      if (!range.from && !range.to) continue;
       params.push(range.timezone);
       const zone = `$${params.length}`;
       if (range.from) {

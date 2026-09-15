@@ -43,5 +43,6 @@ server/uploads/
 
 # Embedded PostgreSQL data and local backups (never commit a database)
 server/db/pgdata/
+server/db/pgdata.lock
 server/backups/
 server/db/*.sqlite.imported-*

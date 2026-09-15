@@ -441,8 +441,12 @@ async function seed() {
               [order.id, productIds[item.index], PRODUCTS[item.index][1], item.quantity, PRODUCTS[item.index][4]]
             );
             order.itemIds.push(r[0].id);
+          }
+          // Deliveries only after every line exists, so the order's status is
+          // worked out against the whole order.
+          for (const [i, item] of items.entries()) {
             if (item.got > 0) {
-              await tx.query('UPDATE purchase_order_items SET quantity_received = $1 WHERE id = $2', [item.got, r[0].id]);
+              await tx.query('UPDATE purchase_order_items SET quantity_received = $1 WHERE id = $2', [item.got, order.itemIds[i]]);
             }
           }
           counts.orders++;

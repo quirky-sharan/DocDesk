@@ -385,7 +385,7 @@ LIMIT 50;`,
        pg_get_constraintdef(oid) AS definition
 FROM pg_constraint
 WHERE connamespace = 'public'::regnamespace AND contype IN ('c', 'f', 'u', 'p')
-ORDER BY table_name::text, kind;`,
+ORDER BY conrelid::regclass::text, contype, conname;`,
   },
 ];
 
