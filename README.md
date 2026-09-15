@@ -6,9 +6,9 @@ small businesses currently getting by on a spreadsheet.
 Built for people who are not technical. Every screen should be obvious, forgiving,
 and hard to break.
 
-> **Status: Phase 1 of 6 — audit and wire-up.**
-> The plumbing is proven end to end. Real inventory and billing features land in
-> Phase 2.
+> **Status: Phase 2 of 6 — full functionality.**
+> Everything works. It is deliberately plain-looking until the Phase 3 design
+> pass.
 
 ---
 
@@ -31,9 +31,8 @@ cd client && npm install && npm run dev
 
 Then open **http://localhost:5173**.
 
-The dashboard shows three status lights. All green means the browser, the API and
-the database are talking to each other. Press **Add sample data** to put some
-records in, then restart the server — the numbers stay, which is the point.
+On first run the dashboard offers to load sample data so there is something to
+look at. Add your own products from the Inventory page whenever you're ready.
 
 ---
 
@@ -79,14 +78,47 @@ Run these from `server/`.
 | `npm run seed` | insert sample records |
 | `npm run seed:clear` | delete all records |
 
+## What it does
+
+**Inventory** — add products, track stock, set a reorder level per product and
+see at a glance what is low or out. Stock changes are entered as "add 20" or
+"remove 3" rather than by overwriting a total, so two people working at once
+cannot clobber each other.
+
+**Sales** — record a sale, and stock moves in the same step. It will not let you
+sell more than you have. Lines can be a catalogue product or free text, so
+services work too. Every sale produces a receipt, on screen and as a PDF.
+
+**Incoming stock** — raise an order against a supplier. Stock only goes up when
+you mark goods as received, and partial deliveries are supported: receive 20 of
+50 now and the rest later.
+
+**Messages** — DocDesk notices when something runs low or a sale needs
+confirming and queues the message. *Sending is not connected yet* — that needs
+an email account, which comes in Phase 6. Until then the Messages page shows
+exactly what would go out.
+
+**Export** — every table downloads as CSV, Excel, JSON or PDF, and respects
+whatever search and sorting you had applied.
+
 ## API
 
 | Route | Purpose |
 |---|---|
 | `GET /api/health` | liveness plus a real database round trip |
 | `GET /api/stats` | live row counts |
-| `POST /api/dev/seed` | insert sample data |
-| `DELETE /api/dev/seed` | clear all data |
+| `GET/POST /api/products`, `/customers`, `/suppliers` | list and create |
+| `GET/PUT/DELETE /api/products/:id` | single record |
+| `POST /api/products/:id/stock` | adjust stock by a delta |
+| `GET /api/products/summary` | counts, low stock, stock value |
+| `GET/POST /api/sales` | list and record sales |
+| `GET /api/sales/:id/receipt` | receipt as JSON |
+| `GET /api/sales/:id/receipt.pdf` | receipt as PDF |
+| `GET/POST /api/purchase-orders` | list and raise orders |
+| `POST /api/purchase-orders/:id/receive` | book in a delivery |
+| `GET /api/messages` | queued and sent messages |
+| `POST /api/messages/send` | run the mock sender |
+| `GET /api/export/:table?format=` | csv, xlsx, json or pdf |
 
 ---
 
@@ -100,7 +132,7 @@ Run these from `server/`.
 | Phase | |
 |---|---|
 | 1 | Audit and wire-up — **done** |
-| 2 | Inventory, sales, receipts, exports, stubbed messaging |
+| 2 | Inventory, sales, receipts, exports, stubbed messaging — **done** |
 | 3 | Design pass, light and dark themes |
 | 4 | Natural language table operations |
 | 5 | Stabilisation |

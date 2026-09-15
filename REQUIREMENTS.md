@@ -37,14 +37,19 @@ setup — do not set it just to have it set.
 
 ---
 
-## Phase 2 will add these — stubbed, not wired
+## Stubbed and waiting for a key (built in Phase 2, switched on in Phase 6)
 
 ### Outbound messaging (low-stock alerts, order confirmations)
 
 **Why:** The spec calls for automated messages when stock drops below its
-reorder level and when orders are confirmed. Phase 2 builds the trigger logic
-and writes what *would* have been sent into the `message_log` table with status
-`queued`. Nothing leaves the machine until Phase 6.
+reorder level and when orders are confirmed. **This is built and working** — the
+triggers fire, and what *would* have been sent is written to the `message_log`
+table with status `queued`, visible on the Messages page. The mock sender flips
+rows to `sent` and logs the payload. Nothing leaves the machine until a real
+provider is configured.
+
+Swapping in a real provider means replacing `sendQueued()` in
+`server/lib/messaging.js`. No caller needs to change.
 
 Candidates, to be decided when we get there:
 

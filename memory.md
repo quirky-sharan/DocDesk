@@ -98,3 +98,90 @@ enforced (SQLite needs `PRAGMA foreign_keys = ON`, which the driver sets).
   correctly after a product is renamed or deleted. Keep that property.
 - Not yet tested against real Postgres — the driver is written but has only run
   on SQLite. Test before deploying.
+
+---
+
+## 2026-09-15 — Phase 2: full functionality
+
+### Scope decision
+
+Sharan confirmed **universal small business**, not the vet clinic the old code
+described. Core model is products / customers / sales / suppliers / purchase
+orders, with a clinic being one way to use it rather than a shape baked into
+the tables.
+
+### Bug fixed first
+
+"Add sample data" threw a raw `SqliteError: UNIQUE constraint failed:
+products.sku` on a second click, because the sample rows use fixed SKUs.
+Seeding now checks for existing records *before* touching any table and refuses
+with a 409 and a sentence, and the button is disabled while records exist. The
+guard is the backstop, not the normal path. Also stopped the error handler
+dumping a stack trace for 4xx — a handled refusal is not a fault.
+
+### What was built
+
+Full CRUD for products, customers, suppliers. Sales with transactional stock
+movement. Purchase orders with partial receiving. Messaging triggers with a
+mock sender. Exports to CSV / JSON / XLSX / PDF for every table, plus PDF
+receipts. Seven frontend pages.
+
+### Decisions worth remembering
+
+**Stock adjustment takes a delta, not a new total.** Two people adjusting at
+once would otherwise silently overwrite each other. Same reasoning behind
+receiving being incremental on purchase orders.
+
+**Sale line items copy their description.** `sale_items.description` is written
+at the time of sale rather than joined from `products`. Rename or delete a
+product later and old receipts still read correctly — which is the entire point
+of a receipt. `product_id` is kept alongside for reporting and goes null on
+delete. Do not "fix" this into a join.
+
+**Lines can be free text with no product**, so services and one-off items work
+without inventing fake catalogue entries.
+
+**Purchase order status is derived, never set by hand** — computed from what
+actually arrived, so it cannot disagree with the line items.
+
+**Low-stock re-alerting is suppressed.** Without it, every sale of an
+already-low item would queue another copy. Restocking above the reorder level
+clears the queued alert.
+
+**Deleting a sale returns its stock.** Deleting a partly-received purchase
+order is refused outright, because stock has already moved — cancel instead.
+
+**`lib/tables.js` is the Phase 4 seam.** Table and column names cannot be bound
+as SQL parameters, so everything reaching an identifier position is checked
+against a whitelist *and* the live schema before interpolation. The
+natural-language layer should drive this module, not build SQL itself.
+
+**Timestamps all come from the database clock.** Passing a JS
+`new Date().toISOString()` for `updated_at` produced two different formats in
+one column (`2026-09-15 05:51:58` vs `2026-09-15T05:53:07.027Z`), which would
+have broken sorting. Use `CURRENT_TIMESTAMP`.
+
+### Dependencies
+
+Added `exceljs` and `pdfkit`. `exceljs` pulls a vulnerable `uuid`, pinned via an
+`overrides` entry in `server/package.json` — do not remove it. `npm audit` is
+clean. Deliberately did **not** go back to `puppeteer` for PDFs; `pdfkit` needs
+no headless browser, which matters for deployment.
+
+### Verified by running it
+
+Sale maths, stock movement, trigger firing, partial receiving, over-receive and
+oversell guards, all four export formats opening correctly, CSV escaping of
+commas/quotes/newlines, and every failure path leaving stock untouched. Recorded
+a sale through the browser end to end: stock moved 22 → 19, confirmation queued
+on its own, no console errors.
+
+### Open / next
+
+- **Postgres driver still untested against real Postgres.** Written but only
+  ever run on SQLite. Test before deploying.
+- Auth still deferred; `users` table exists, nothing uses it.
+- Phase 3 is the design pass — no new functionality, and every screen gets
+  restyled, including a light/dark toggle.
+- `sales.list` and `purchase_orders.list` fetch all customers/suppliers to
+  attach names. Fine at this size, worth a join if the tables get large.
