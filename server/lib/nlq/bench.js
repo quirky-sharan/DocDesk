@@ -73,7 +73,7 @@ function matches(actual, expected) {
 }
 
 async function run() {
-  const info = status();
+  const info = await status({ probe: true });
   if (!info.configured) {
     console.log('No AI provider configured. Set a key in server/.env first.');
     console.log(`Expected one of: ${info.providers.map((p) => p.keyVar).join(', ')}`);

@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 
@@ -12,7 +12,7 @@ const apiRoutes = require('./routes');
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 app.use('/api', systemRoutes);
 app.use('/api/dev', devRoutes);

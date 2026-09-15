@@ -11,7 +11,7 @@ const files = require('../controllers/files');
 const settings = require('../controllers/settings');
 const reports = require('../controllers/reports');
 const importProducts = require('../controllers/importProducts');
-const ai = require('../controllers/ai');
+const assistant = require('../controllers/assistant');
 const { upload, importUpload } = require('../lib/storage');
 
 const router = express.Router();
@@ -83,9 +83,10 @@ router.get('/reports/stock-by-category', reports.stockByCategory);
 router.get('/reports/pulse', reports.pulse);
 router.get('/customers/:id/history', reports.customerHistory);
 
-router.get('/ai/status', ai.status);
-router.post('/ai/interpret', ai.interpret);
-router.post('/ai/apply', ai.apply);
+router.get('/ai/status', assistant.status);
+router.post('/assistant/message', assistant.message);
+router.post('/assistant/confirm', assistant.confirm);
+router.post('/assistant/cancel', assistant.cancel);
 
 router.get('/export', exportsCtrl.options);
 router.get('/export/:table', exportsCtrl.table);
