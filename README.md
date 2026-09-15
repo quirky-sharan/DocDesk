@@ -98,8 +98,20 @@ confirming and queues the message. *Sending is not connected yet* — that needs
 an email account, which comes in Phase 6. Until then the Messages page shows
 exactly what would go out.
 
+**Files** — keep invoices, delivery notes and photos in one place. Drag them in,
+preview images and PDFs without downloading, attach them to a product or sale.
+
+**Import** — already keeping stock in a spreadsheet? Export it as CSV and import
+it. DocDesk works out which of your columns is which, shows you what it found
+before saving anything, and tells you which rows it couldn't read.
+
+**Reports** — revenue, profit estimate, what sells best, who spends most, and
+what any one customer has bought before.
+
 **Export** — every table downloads as CSV, Excel, JSON or PDF, and respects
 whatever search and sorting you had applied.
+
+**Settings** — your shop's name, address and footer go on every receipt.
 
 ## API
 
@@ -119,6 +131,15 @@ whatever search and sorting you had applied.
 | `GET /api/messages` | queued and sent messages |
 | `POST /api/messages/send` | run the mock sender |
 | `GET /api/export/:table?format=` | csv, xlsx, json or pdf |
+| `GET/POST /api/files` | list and upload files |
+| `GET /api/files/:id/content` | preview or download a file |
+| `POST /api/products/import/preview` | dry-run a CSV import |
+| `POST /api/products/import` | apply a CSV import |
+| `GET/PUT /api/settings` | business details |
+| `GET /api/reports/summary` | revenue, margin, outstanding |
+
+All list endpoints accept `search`, `sort`, `dir`, `page` and `pageSize`, and
+return `{ rows, total, page, pageCount }`.
 
 ---
 

@@ -185,3 +185,95 @@ on its own, no console errors.
   restyled, including a light/dark toggle.
 - `sales.list` and `purchase_orders.list` fetch all customers/suppliers to
   attach names. Fine at this size, worth a join if the tables get large.
+
+---
+
+## 2026-09-15 — Phase 2 extension: files, import, reports, settings, paging
+
+Sharan asked for better search and sorting, optimisation, a file store, and
+"whatever else you think is needed". Still Phase 2 — no design work.
+
+### Optimisation: the real problems were in the wrong layer
+
+Three things were being done in JavaScript that belong in SQL:
+
+1. **Sales and purchase orders fetched the entire customers/suppliers table on
+   every list request** just to attach one display name. Now a LEFT JOIN,
+   declared per table in `lib/tables.js`. Joined columns are searchable too, so
+   searching a sale by its customer's name works.
+2. **Product stock filtering ran on the returned rows.** That quietly meant the
+   total count and page count were wrong whenever a filter was applied — it only
+   filtered whatever page you happened to be on. Stock status compares two
+   columns so it can't be a bound equality; `extraConditions` takes fixed SQL
+   fragments written in the controllers. **Those must never be built from
+   request input.**
+3. No indexes on the columns search and sort actually hit. Added.
+
+Everything paginates now (page/pageSize in, page/pageCount/total out, capped at
+200). **Exports deliberately pass `paginate: false`** — a download is the whole
+filtered set, not the page you were looking at.
+
+On the client, six list pages were each hand-rolling the same search/sort/
+debounce/loading state. They share `hooks/useList.js` now, which also fixed a
+race none of them handled: a slow earlier request could land after a newer one
+and overwrite it. Only the newest request writes state.
+
+### Files
+
+Storage is `server/uploads/` (gitignored), names on disk generated, never
+derived from the upload — a crafted filename cannot escape the directory or
+overwrite anything. Original name kept in the database for display only.
+
+Security decisions worth not undoing:
+- **Allow-list of MIME types, not a block-list.** Scripts and archives refused.
+- **Only types a browser renders inertly preview inline** (images, PDF, plain
+  text); everything else forces a download. Plus `nosniff` and a restrictive
+  CSP, so an uploaded document can never execute in the app's origin.
+- Previews render in an iframe with `sandbox=""` — no scripts, no same-origin.
+- A rejected upload has its bytes deleted; multer writes to disk before the
+  route runs, so without that cleanup every rejection leaves an orphan.
+
+### CSV import
+
+The target user is coming off a spreadsheet, so this is the migration path.
+Matches their headings against aliases (Price/Rate/MRP all mean sale price),
+previews before writing, reports bad rows by line number while still importing
+the good ones, and **updates by SKU on re-import rather than duplicating**.
+
+**It accepts CSVs by file extension, not MIME type.** Browsers variously report
+a .csv as `text/csv`, `application/vnd.ms-excel` or `application/octet-stream`
+depending on the machine and whether Excel is installed — trusting the type
+would have failed for real users. Safe only because the importer reads the bytes
+as text and deletes the file before responding. **Do not apply that reasoning to
+the general file store.**
+
+### Settings and reports
+
+Receipts carried the literal string "DocDesk" instead of the shop's name.
+Settings is a whitelisted key/value table so new settings need no migration.
+The shop's usual tax rate pre-fills new sales.
+
+Reports cover revenue, estimated margin, sales per day, best sellers, top
+customers, and per-customer history. **Margin is an estimate** — it uses each
+product's *current* cost price, so changing a cost shifts historical figures.
+Storing cost per line at sale time would fix it; worth doing if margin
+reporting ever becomes load-bearing.
+
+### Verified by running it
+
+Pagination, filters, joined-column search and sort, injection still blocked on
+table/column names. File upload, type rejection, orphan cleanup, inline vs
+forced download headers, sandboxed preview. CSV import: column auto-detection,
+quoted commas, doubled quotes, multi-line fields, re-import updating by SKU,
+bad rows skipped with line numbers, non-CSV refused. Receipt PDF rendered and
+read back — the shop name, address, phone and footer all appear. All ten pages
+load with zero console errors.
+
+### Still open
+
+- **Postgres driver has still never run against real Postgres.** Same warning as
+  last session, now with more SQL riding on it. Test before deploying.
+- Product/customer dropdowns on the sale and order forms request 200 rows and
+  stop there. A shop with more than 200 products needs those to become
+  type-to-search.
+- Auth still deferred.
