@@ -22,6 +22,18 @@ const CUSTOMERS = [
 ];
 
 async function seed() {
+  // Sample rows use fixed SKUs, which are UNIQUE, so a second run would collide.
+  // Refuse before touching anything rather than failing partway through, and
+  // never silently overwrite records the user may have entered themselves.
+  const { rows } = await db.query('SELECT COUNT(*) AS count FROM products');
+  if (Number(rows[0].count) > 0) {
+    const err = new Error(
+      'There are already records in the database. Use "Clear all" first if you want to reload the sample data.'
+    );
+    err.status = 409;
+    throw err;
+  }
+
   return db.transaction(async (tx) => {
     const supplierIds = [];
     for (const [name, contact, phone, email] of SUPPLIERS) {

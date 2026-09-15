@@ -52,6 +52,9 @@ export default function DashboardPage() {
   }
 
   const connected = Boolean(health);
+  const hasRecords = stats
+    ? Object.values(stats.counts).some((n) => n > 0)
+    : false;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -103,14 +106,15 @@ export default function DashboardPage() {
             <button
               className="btn-primary"
               onClick={() => runSampleAction(api.seed)}
-              disabled={busy || !connected}
+              disabled={busy || !connected || hasRecords}
+              title={hasRecords ? 'Clear the existing records first' : undefined}
             >
               {busy ? 'Working…' : 'Add sample data'}
             </button>
             <button
               className="btn-danger"
               onClick={() => runSampleAction(api.clearSeed)}
-              disabled={busy || !connected}
+              disabled={busy || !connected || !hasRecords}
             >
               Clear all
             </button>
