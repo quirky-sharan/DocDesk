@@ -7,12 +7,20 @@ const sales = require('../controllers/sales');
 const purchaseOrders = require('../controllers/purchaseOrders');
 const messages = require('../controllers/messages');
 const exportsCtrl = require('../controllers/exports');
+const files = require('../controllers/files');
+const settings = require('../controllers/settings');
+const reports = require('../controllers/reports');
+const importProducts = require('../controllers/importProducts');
+const { upload, importUpload } = require('../lib/storage');
 
 const router = express.Router();
 
 // Inventory. The summary route is declared before /:id so "summary" is not
 // parsed as an id.
 router.get('/products/summary', products.summary);
+router.get('/products/categories', products.categories);
+router.post('/products/import/preview', importUpload.single('file'), importProducts.preview);
+router.post('/products/import', importUpload.single('file'), importProducts.commit);
 router.get('/products', products.list);
 router.post('/products', products.create);
 router.get('/products/:id', products.get);
@@ -50,6 +58,23 @@ router.post('/purchase-orders/:id/receive', purchaseOrders.receive);
 router.get('/messages', messages.list);
 router.post('/messages/send', messages.send);
 router.delete('/messages/:id', messages.remove);
+
+router.get('/files/info', files.info);
+router.get('/files', files.list);
+router.post('/files', upload.array('files', 10), files.upload);
+router.get('/files/:id', files.get);
+router.put('/files/:id', files.update);
+router.get('/files/:id/content', files.download);
+router.delete('/files/:id', files.remove);
+
+router.get('/settings', settings.get);
+router.put('/settings', settings.update);
+
+router.get('/reports/summary', reports.summary);
+router.get('/reports/sales-by-day', reports.salesByDay);
+router.get('/reports/top-products', reports.topProducts);
+router.get('/reports/top-customers', reports.topCustomers);
+router.get('/customers/:id/history', reports.customerHistory);
 
 router.get('/export', exportsCtrl.options);
 router.get('/export/:table', exportsCtrl.table);

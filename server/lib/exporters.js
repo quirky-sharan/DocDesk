@@ -121,8 +121,12 @@ async function receiptToPdf(receipt) {
   const money = (n) => Number(n || 0).toFixed(2);
   const right = doc.page.width - 50;
 
-  doc.fontSize(22).font('Helvetica-Bold').text('DocDesk');
-  doc.fontSize(10).font('Helvetica').fillColor('#666').text('Receipt');
+  const business = receipt.business || {};
+  doc.fontSize(22).font('Helvetica-Bold').text(business.name || 'Receipt');
+  doc.fontSize(10).font('Helvetica').fillColor('#666');
+  for (const line of [business.address, [business.phone, business.email].filter(Boolean).join('  ·  ')]) {
+    if (line) doc.text(line);
+  }
   doc.fillColor('#000').moveDown(1.2);
 
   doc.fontSize(11).font('Helvetica-Bold').text(receipt.reference || 'Receipt');
@@ -196,6 +200,12 @@ async function receiptToPdf(receipt) {
 
   if (receipt.notes) {
     doc.moveDown(1).fillColor('#000').fontSize(9).text(receipt.notes, 50, undefined, { width: 400 });
+  }
+  if (business.footer) {
+    doc.moveDown(1.5).fillColor('#666').fontSize(9).text(business.footer, 50, undefined, {
+      width: doc.page.width - 100,
+      align: 'center',
+    });
   }
 
   return pdfToBuffer(doc);

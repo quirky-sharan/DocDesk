@@ -62,6 +62,30 @@ const upload = multer({
   },
 });
 
+/**
+ * Uploader for the spreadsheet importer.
+ *
+ * Browsers disagree wildly about what a .csv is - text/csv, application/vnd.ms-excel
+ * and application/octet-stream are all common depending on OS and whether Excel
+ * is installed - so this one trusts the extension instead. That is safe here in
+ * a way it would not be for the general file store: the importer only ever
+ * reads the bytes as text and deletes the file before it responds.
+ */
+const importUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => cb(null, generateStoredName({ ...file, mimetype: 'text/csv' })),
+  }),
+  limits: { fileSize: MAX_FILE_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const name = (file.originalname || '').toLowerCase();
+    if (name.endsWith('.csv') || name.endsWith('.txt')) return cb(null, true);
+    const err = new Error('Please choose a .csv file. Export one from Excel or Google Sheets first.');
+    err.status = 400;
+    cb(err);
+  },
+});
+
 /** Resolves a stored name to a path, refusing anything that escapes UPLOAD_DIR. */
 function resolveStoredPath(storedName) {
   const full = path.resolve(UPLOAD_DIR, storedName);
@@ -86,6 +110,6 @@ async function deleteStored(storedName) {
 }
 
 module.exports = {
-  upload, UPLOAD_DIR, MAX_FILE_BYTES, ALLOWED, ALLOWED_LABEL,
+  upload, importUpload, UPLOAD_DIR, MAX_FILE_BYTES, ALLOWED, ALLOWED_LABEL,
   resolveStoredPath, deleteStored,
 };

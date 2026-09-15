@@ -29,3 +29,6 @@ Thumbs.db
 server/db/*.sqlite
 server/db/*.sqlite-shm
 server/db/*.sqlite-wal
+
+# Uploaded files (local storage)
+server/uploads/

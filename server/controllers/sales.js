@@ -2,6 +2,7 @@ const db = require('../db');
 const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, number, oneOf, id, money } = require('../lib/validate');
 const { checkStockLevels, queueSaleConfirmation } = require('../lib/messaging');
+const { readAll: readSettings } = require('./settings');
 
 const PAYMENT_STATUSES = ['unpaid', 'partial', 'paid', 'refunded'];
 
@@ -211,7 +212,16 @@ exports.receipt = async (req, res, next) => {
 
 async function buildReceipt(saleId) {
   const sale = await loadSale(saleId);
+  const settings = await readSettings();
   return {
+    business: {
+      name: settings.business_name,
+      address: settings.business_address,
+      phone: settings.business_phone,
+      email: settings.business_email,
+      footer: settings.receipt_footer,
+    },
+    currency: settings.currency_symbol,
     reference: sale.reference,
     issuedAt: sale.created_at,
     customer: sale.customer_id
