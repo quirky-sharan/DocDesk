@@ -8,6 +8,7 @@ import {
 import { api } from '../api/client';
 import { useDataChanged } from '../hooks/useDataChanged';
 import { useTheme } from '../hooks/useTheme';
+import { useMeasure } from '../hooks/useMeasure';
 import { useSettings } from '../lib/settings';
 import { useAssistant } from '../assistant/AssistantProvider';
 import { Avatar, Badge, Button, Card, CardHeader, ErrorNote, SegmentedControl, useToast } from '../components/ui';
@@ -187,13 +188,16 @@ function Hero({ data, loading, onRefresh }) {
 function SkylineCard({ data, className }) {
   const { isDark } = useTheme();
   const { money, compactMoney } = useSettings();
-  const days = data.byDay.slice(-21);
+  const [cardRef, { width }] = useMeasure();
+  // Fewer, larger columns when the card is narrow (a phone, or the assistant open).
+  const days = data.byDay.slice(width && width < 760 ? -14 : -21);
   const sceneData = days.map((d) => ({ key: d.day, value: d.revenue, sales: d.saleCount }));
   const week = data.pulse.thisWeek;
 
   return (
     <Reveal className={className}>
       <div
+        ref={cardRef}
         className="relative h-full overflow-hidden rounded-[26px]"
         style={{
           background: isDark

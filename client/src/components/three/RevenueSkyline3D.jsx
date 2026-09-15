@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, RoundedBox, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
 import { StageCanvas, Studio } from './Studio';
@@ -136,11 +136,25 @@ function Sculpture({ data, dark, reduced, formatValue, formatLabel }) {
   );
 }
 
+/** Pulls the camera back (by zooming out) when the card is too narrow for the whole row. */
+function FitWidth({ width, offset }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const aspect = size.width / Math.max(size.height, 1);
+    const visible = 2 * camera.position.length() * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * aspect;
+    const needed = width + Math.abs(offset) * 2 + 0.8;
+    camera.zoom = Math.min(1, visible / needed);
+    camera.updateProjectionMatrix();
+  }, [camera, size, width, offset]);
+  return null;
+}
+
 /** Daily revenue as a row of glass columns. The 2D chart beside it carries the exact values. */
 export default function RevenueSkyline3D({ active, reduced, data = [], dark = false, formatValue = String, formatLabel = (d) => d.key }) {
   return (
     <StageCanvas active={active} camera={{ position: [0, 1.5, 9.2], fov: 34 }}>
       <Sculpture data={data} dark={dark} reduced={reduced} formatValue={formatValue} formatLabel={formatLabel} />
+      <FitWidth width={data.length * 0.52 + 0.8} offset={1.1} />
       <OrbitControls
         enablePan={false}
         enableZoom={false}
