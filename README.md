@@ -1,177 +1,107 @@
-# DocDesk — Clinic Management System
+# DocDesk
 
-A unified web application for veterinary (and general) clinics to manage patients, appointments, billing, medications, and generate PDF receipts and Excel exports.
+A front desk that runs itself — inventory, receipts and customer records for
+small businesses currently getting by on a spreadsheet.
 
-## Tech Stack
+Built for people who are not technical. Every screen should be obvious, forgiving,
+and hard to break.
 
-| Layer | Technology |
+> **Status: Phase 1 of 6 — audit and wire-up.**
+> The plumbing is proven end to end. Real inventory and billing features land in
+> Phase 2.
+
+---
+
+## Running it
+
+You need [Node.js](https://nodejs.org) 18 or newer. Nothing else — no database to
+install, no accounts to create, no keys.
+
+**Windows:** double-click `start_all.bat`.
+
+**Anything else:**
+
+```bash
+cd server && npm install && npm run migrate && npm run dev
+```
+
+```bash
+cd client && npm install && npm run dev
+```
+
+Then open **http://localhost:5173**.
+
+The dashboard shows three status lights. All green means the browser, the API and
+the database are talking to each other. Press **Add sample data** to put some
+records in, then restart the server — the numbers stay, which is the point.
+
+---
+
+## How it fits together
+
+```
+client/   React + Vite + Tailwind      → localhost:5173
+server/   Express REST API             → localhost:5000
+          └ db/  SQLite file, or Postgres when DATABASE_URL is set
+ml/       reserved for Phase 4, empty on purpose
+```
+
+In development Vite proxies `/api` to the Express server, so there is no CORS
+setup and no `.env` file needed to get started.
+
+### The database switches itself
+
+`server/db/index.js` picks its driver from the environment:
+
+| `DATABASE_URL` | Driver | When |
+|---|---|---|
+| not set | SQLite file in `server/db/` | local development, the default |
+| set | PostgreSQL | deployment |
+
+All SQL is written once, Postgres-first with `$1` placeholders, and rewritten to
+SQLite's positional `?` at the seam in `server/db/sql.js`. So local development
+needs no setup and deploying is a config change rather than a rewrite.
+
+The two schema files in `server/db/` are kept deliberately parallel. **Adding a
+table means editing both.**
+
+---
+
+## Server commands
+
+Run these from `server/`.
+
+| Command | What it does |
 |---|---|
-| Database | PostgreSQL via [Supabase](https://supabase.com) |
-| Backend | Node.js + Express |
-| DB client | `pg` |
-| Auth | JWT + bcrypt |
-| PDF generation | Puppeteer |
-| Excel export | SheetJS (`xlsx`) |
-| Frontend | React 18 + Vite |
-| Data fetching | TanStack Query v5 |
-| Styling | Tailwind CSS v3 |
+| `npm run dev` | start with auto-reload |
+| `npm start` | start once |
+| `npm run migrate` | create tables — safe to re-run |
+| `npm run seed` | insert sample records |
+| `npm run seed:clear` | delete all records |
 
-## Project Structure
+## API
 
-```
-DocDesk/
-├── client/          # React frontend (Vite)
-├── server/          # Express REST API
-├── db/              # SQL schema + ER diagram
-├── ml/              # Placeholder for future ML models
-├── .gitignore
-└── README.md
-```
-
-## Prerequisites
-
-- **Node.js** v18 or later
-- **npm** v9 or later
-- A free [Supabase](https://supabase.com) account
+| Route | Purpose |
+|---|---|
+| `GET /api/health` | liveness plus a real database round trip |
+| `GET /api/stats` | live row counts |
+| `POST /api/dev/seed` | insert sample data |
+| `DELETE /api/dev/seed` | clear all data |
 
 ---
 
-## Setup Instructions
+## Where things are written down
 
-### 1. Clone the repository
+- **`memory.md`** — what was built, why, and what is still open. Read it first.
+- **`REQUIREMENTS.md`** — external services and keys, none needed yet.
 
-```bash
-git clone https://github.com/quirky-sharan/DocDesk.git
-cd DocDesk
-```
+## Roadmap
 
-### 2. Set up the database (Supabase)
-
-1. Create a new project at [app.supabase.com](https://app.supabase.com)
-2. Go to **SQL Editor** and paste the contents of `db/schema.sql`, then click **Run**
-3. Copy your **connection string** from `Project Settings → Database → Connection string (URI mode)`
-
-### 3. Configure the backend
-
-```bash
-cd server
-cp .env.example .env
-```
-
-Edit `server/.env`:
-
-```
-DATABASE_URL=postgresql://postgres:<your-password>@<your-host>:5432/postgres
-JWT_SECRET=change_this_to_a_long_random_string
-PORT=5000
-```
-
-```bash
-npm install
-```
-
-### 4. Configure the frontend
-
-```bash
-cd ../client
-cp .env.example .env
-```
-
-Edit `client/.env`:
-
-```
-VITE_API_URL=http://localhost:5000/api
-```
-
-```bash
-npm install
-```
-
-### 5. Run in development
-
-Open **two terminal tabs**:
-
-**Tab 1 — Backend:**
-```bash
-cd server
-npm run dev
-# → Server running on http://localhost:5000
-```
-
-**Tab 2 — Frontend:**
-```bash
-cd client
-npm run dev
-# → Vite dev server at http://localhost:5173
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
----
-
-## API Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/auth/register` | No | Register a new user |
-| POST | `/api/auth/login` | No | Login, returns JWT |
-| GET  | `/api/patients` | Yes | List all patients |
-| POST | `/api/patients` | Yes | Create patient |
-| GET  | `/api/patients/:id` | Yes | Get single patient |
-| PUT  | `/api/patients/:id` | Yes | Update patient |
-| DELETE | `/api/patients/:id` | Yes | Delete patient |
-| GET  | `/api/appointments` | Yes | List appointments |
-| POST | `/api/appointments` | Yes | Create appointment |
-| GET/PUT/DELETE | `/api/appointments/:id` | Yes | Single appointment |
-| GET  | `/api/medications` | Yes | List medications |
-| POST | `/api/medications` | Yes | Add medication |
-| GET/PUT/DELETE | `/api/medications/:id` | Yes | Single medication |
-| GET  | `/api/billing` | Yes | List bills |
-| POST | `/api/billing` | Yes | Create bill |
-| GET  | `/api/billing/:id/pdf` | Yes | Download bill as PDF |
-| GET  | `/api/export/patients` | Yes | Export patients as Excel |
-| GET  | `/api/export/billing` | Yes | Export billing as Excel |
-
-Pass JWT in the `Authorization: Bearer <token>` header for all protected routes.
-
----
-
-## Deployment
-
-### Backend (Render / Railway)
-1. Connect your GitHub repo on [Render](https://render.com) or [Railway](https://railway.app)
-2. Set the **build command**: `cd server && npm install`
-3. Set the **start command**: `node server/index.js`
-4. Add the environment variables from `server/.env`
-
-### Frontend (Vercel / Netlify)
-1. Connect your GitHub repo
-2. Set **root directory** to `client`
-3. Set **build command**: `npm run build`
-4. Set **publish directory**: `dist`
-5. Add `VITE_API_URL` pointing to your deployed backend URL
-
----
-
-## Roles
-
-| Role | Permissions |
-|------|-------------|
-| `admin` | Full access |
-| `doctor` | Patients, appointments, prescriptions, view billing |
-| `receptionist` | Patients, appointments, billing / receipts |
-
----
-
-## Contributing
-
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit: `git commit -m "feat: add my feature"`
-4. Push and open a Pull Request
-
----
-
-## License
-
-MIT
+| Phase | |
+|---|---|
+| 1 | Audit and wire-up — **done** |
+| 2 | Inventory, sales, receipts, exports, stubbed messaging |
+| 3 | Design pass, light and dark themes |
+| 4 | Natural language table operations |
+| 5 | Stabilisation |
+| 6 | Real keys, deployment |

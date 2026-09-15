@@ -1,0 +1,100 @@
+# DocDesk — build log
+
+Running log of what was built, why, and what's still open. Read this first at
+the start of any session.
+
+---
+
+## 2026-09-15 — Phase 1: audit & wire-up
+
+### What the repo looked like on arrival
+
+Nothing ran. Three separate problems, each independently fatal:
+
+1. **Frontend could not render.** `main.jsx` wrapped `<App/>` in a
+   `<BrowserRouter>`, and `App.jsx` rendered a second `<Router>` inside it.
+   React Router throws on a nested router, so the page was blank.
+2. **No database existed.** `db.js` hard-required `DATABASE_URL` pointing at
+   Supabase with SSL. Only `.env.example` was present, never a real `.env`, so
+   every endpoint 500'd.
+3. **Two incompatible data models in one codebase.** Six routes were mounted
+   (doctors, patients, appointments, medicines, inventory, bills) against a vet
+   clinic schema in `db/schema.sql`. Four more (auth, billing, medications,
+   export) existed but were **never registered in `index.js`**, and queried
+   tables and columns defined in *no* schema file anywhere —
+   `exportController` selected `patients.owner_name`, `billingController`
+   selected `bills.subtotal` and formatted `i.total_price`, a column its own
+   INSERT never wrote. A third and fourth schema (`server/schema.sql`,
+   `server/schema-app.sql`) described a different app again.
+
+Also: `migrate.js` read the wrong schema file, `errorHandler.js` was written but
+never attached, and the frontend had duplicate page pairs
+(Bills/Billing, Medicines/Medications) where only one of each was routed.
+
+### Decisions
+
+**Product scope → universal small business.** Confirmed with Sharan. The
+existing code was vet-specific (`species`, `pet_name`, `owner_name`, `doctors`)
+but the spec describes a front desk for clinics, shops and small enterprises.
+The core model is now generic: `products`, `customers`, `sales`, `sale_items`,
+`suppliers`, `purchase_orders`, `message_log`. A clinic is then just one way to
+use it rather than a schema baked into the tables.
+
+**Database → one codebase, two drivers.** Sharan wants to deploy eventually,
+which rules out plain SQLite (most hosts wipe the filesystem on redeploy), but
+requiring a Supabase signup now would break the "no external services before
+Phase 6" rule. So `server/db/index.js` picks its driver from the environment:
+`DATABASE_URL` set means Postgres, absent means a local SQLite file. A fresh
+clone runs with zero setup, and deploying is a config change rather than a
+rewrite.
+
+The cost of that is one compatibility seam. All SQL is written Postgres-first
+with `$1` placeholders; `server/db/sql.js` rewrites them to positional `?` for
+SQLite. It expands reused placeholders into occurrence order because
+better-sqlite3 will not bind `?N` from an array, and it skips string literals so
+a `$` inside quotes survives. The two schema files are kept deliberately
+parallel — **if you add a table, add it to both.**
+
+**Dropped dependencies.** `puppeteer` and `xlsx` were only used by the dead
+unmounted controllers, and between them accounted for most of the audit
+findings including a critical in `tar` via `node-pre-gyp`. Removed both.
+`bcrypt` → `bcryptjs` to kill the last native build step, which also makes
+deployment simpler. `npm audit` is clean. Phase 2 will use `pdfkit` for
+receipts and `exceljs` for spreadsheets — both maintained, neither needs a
+headless browser.
+
+**Auth deferred, not deleted.** There is a `users` table ready, but the login
+page and route guard were removed. They pointed at endpoints that no longer
+exist, and a half-wired login is worse than none. A single operator running this
+on their own machine does not need one yet. Revisit when multi-user or
+deployment makes it real.
+
+### What exists now
+
+- `GET /api/health` — liveness plus a real database round trip, so a green light
+  means the whole chain works rather than just Express being up
+- `GET /api/stats` — live row counts
+- `POST|DELETE /api/dev/seed` — sample data, proves writes persist
+- Dashboard at `/` showing all of the above
+- `npm run migrate` / `npm run seed` / `npm run seed:clear` in `server/`
+
+### Verified by actually running it
+
+Boots clean on both ports. Seed and clear round trip through the UI. Data
+survives a server restart. With the backend stopped the UI degrades to a plain
+"cannot reach the server" message with the action buttons disabled, and recovers
+on its own when the backend returns. No console errors, no backend exceptions.
+
+Transaction behaviour was tested directly: commits apply, a failed statement
+rolls the whole transaction back, `CHECK` constraints and foreign keys are
+enforced (SQLite needs `PRAGMA foreign_keys = ON`, which the driver sets).
+
+### Open / next
+
+- `ml/` is scaffolded and intentionally empty.
+- Phase 2 builds the real CRUD: inventory, sales, receipts, purchase orders,
+  the stubbed messaging trigger, and exports.
+- Sale line items denormalise `description` on purpose so a receipt still reads
+  correctly after a product is renamed or deleted. Keep that property.
+- Not yet tested against real Postgres — the driver is written but has only run
+  on SQLite. Test before deploying.
