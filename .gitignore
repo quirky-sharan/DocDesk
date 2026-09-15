@@ -24,3 +24,8 @@ Thumbs.db
 # Temp files
 *.tmp
 .cache/
+
+# Local SQLite database (dev only)
+server/db/*.sqlite
+server/db/*.sqlite-shm
+server/db/*.sqlite-wal
