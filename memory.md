@@ -580,3 +580,110 @@ Gotchas found while testing:
 
 Sharan pasted the Groq key into the conversation. It works and is in
 `server/.env` (gitignored, verified not in any commit). He should rotate it.
+
+---
+
+## 2026-09-16 — Redesign and the PostgreSQL rebuild
+
+Asked for: a frontend that feels premium (Apple-like: clean, sober, animated,
+3D, charts), then a real database and a proper database management system,
+keeping deployment in mind.
+
+### Design system (client)
+
+- **Colour tokens are RGB channels** (`--c-accent: 10 132 255`) so Tailwind can
+  do `rgb(var(--c-accent) / <alpha-value>)`. Each theme defines every token three
+  times: `:root`, `prefers-color-scheme: dark` guarded by `:not([data-theme=light])`,
+  and `[data-theme=dark]`. Never give a colour its only definition inside a media block.
+- **Chart colours come from a validated palette** (series 1-4 per theme, a
+  one-hue sequential ramp, reserved status colours). Text never wears a series colour.
+- Motion: `motion/react` with `MotionConfig reducedMotion="user"`, Lenis smooth
+  scrolling on `<main>` (inner scrollers need `data-lenis-prevent`), a global
+  press ripple (`lib/press.js`), theme switch as a View Transition circle.
+- **React is pinned to `~19.2.0`** because `@react-three/fiber` 9.7 declares
+  `react <19.3`. Don't bump React without checking R3F's peer range.
+- **3D is never load-bearing.** `components/three/Scene3D.jsx` loads three.js only
+  when the scene nears the viewport, pauses rendering off screen, and falls back to
+  a 2D chart when WebGL is missing or the scene throws. three.js is a ~1 MB lazy chunk.
+- Pages other than the dashboard are `React.lazy`; the main bundle went 733 KB → 540 KB.
+
+### Why PostgreSQL, and why embedded
+
+SQLite locally + Postgres in production meant two dialects and two schema files
+that had already drifted. Now it is **PostgreSQL everywhere**:
+
+- Locally: **PGlite** (Postgres 18 compiled to WASM) in a `worker_thread`, data in
+  `server/db/pgdata`. No install. A slow query can't block Express; a timeout
+  terminates and restarts the worker.
+- Hosted: `pg` Pool from `DATABASE_URL`. Same migrations, triggers and SQL.
+- `db.transaction()` uses AsyncLocalStorage, so nested calls join the open
+  transaction, and it sets `docdesk.actor` for the audit trigger.
+- A **lock file** (`pgdata.lock`) stops a second process opening the same data
+  folder — two PGlite instances on one folder corrupt it.
+
+Rules moved into the database (migration 004): stock ledger kept by triggers,
+payment rows derive a sale's status, deferred constraint trigger checks sale
+totals, low-stock alerts raised by trigger, row_version optimistic locking,
+reference numbers from sequences, generic JSONB audit trigger (005), reporting
+views and set-returning functions bucketed by `business_timezone()` (006).
+Money is computed in integer cents in JS so it matches `numeric` rounding.
+
+The old SQLite file was imported once on first start (`db/legacy/importSqlite.js`)
+and renamed `*.imported-<stamp>`; part-paid sales with no recorded amount were
+kept and flagged (the Health tab lists them as a warning, not an error).
+
+### Database console (Database page)
+
+Overview · Tables · ER diagram · SQL workbench (autocomplete, examples, history,
+charts, visual EXPLAIN) · Activity (audit trail) · Performance · Health
+(integrity checks + repairs) · Backups (gzip JSON, restore in one transaction
+after a safety backup, SQL export).
+
+Safety model — keep it:
+- Reads run through a `DECLARE CURSOR` inside a read-only transaction that is
+  always rolled back, fetching at most 1,000 rows.
+- Anything that writes needs "Allow changes", and the server refuses it unless
+  admin is enabled: on for embedded, **off for hosted unless `DB_ADMIN=on`**,
+  because a deployed DocDesk has no sign-in yet.
+- Dangerous functions (`set_config`, file access…) are refused by the tokenizer
+  before anything reaches the database.
+- Error positions from PostgreSQL are shifted back past the prefix the server
+  adds (`DECLARE … FOR`, `EXPLAIN (…)`), so the console's caret points at the
+  right character.
+
+### Gotchas worth remembering
+
+- **Constraint triggers can't be `CREATE OR REPLACE`d** — drop and create.
+- A Postgres created with a Windows code page (WIN1252) rejects `₹`
+  (`22P05 untranslatable character`). Hosted DBs must be UTF8; the server warns.
+- `pg` warns about `SET` in an on-connect hook; use explicit `AT TIME ZONE` instead.
+- Binding a `$n` that the SQL doesn't use → `could not determine data type of
+  parameter`. Only bind the timezone when a date range is actually present.
+- Seed: apply purchase-order receipts **after** all items are inserted, or the
+  status trigger marks a partial order received.
+- motion can't animate an SVG path's `d` from undefined; use a CSS `transition: d`.
+- `Rings` takes `target`, not `goal`.
+- Nested `<button>`s (a row that expands containing a Repair/Delete button) —
+  make the row a `div role="button"` instead.
+- **Don't run `sed -i` or `node -e` with template literals through Git Bash on
+  these files**: bash ate `${…}` once, and sed turned `start.ps1` LF (restored to CRLF).
+- Browser-pane screenshots taken while the pane is hidden look faded: animations
+  are throttled mid-flight. Wait, or re-screenshot, before calling it a bug.
+
+### Verified
+
+- `npx vite build` clean. Every route checked in the browser (desktop dark, phone
+  light) with no console errors and no horizontal overflow at 375 px.
+- 30 business-rule tests against embedded **and** a real PostgreSQL server; seed
+  consistency (ledger, subtotals, paid amounts) zero mismatches on both.
+- API smoke test of every endpoint, including the SQL console, EXPLAIN, backups
+  and restore.
+- Assistant answered "How big is the database?" through the new `database_overview` tool.
+
+### Still open
+
+- **Sign-in.** Needed before a deployment can safely enable `DB_ADMIN`.
+- Real message delivery (Resend/Brevo) — `sendQueued()` in `lib/messaging.js`.
+- The legacy import left 8 part-paid sales without an amount; record their
+  payments from Sales when known.
+- The Groq key pasted into chat earlier still needs rotating.

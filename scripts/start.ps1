@@ -199,6 +199,6 @@ Write-Host ''
 Write-Host '  DocDesk is running.' -ForegroundColor Green
 Write-Host ''
 Say "Open:       $webUrl"
-Say 'Assistant:  press Ctrl+K on any page'
+Say 'Assistant:  press Ctrl+J on any page (Ctrl+K searches)'
 Say 'Stop:       run stop_all.bat (or close the two minimised DocDesk windows)'
 Write-Host ''

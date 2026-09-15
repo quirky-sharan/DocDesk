@@ -19,9 +19,9 @@ Restart the server after editing it.
 ## 1. AI assistant — worth doing now
 
 **What it unlocks:** the assistant on every page (**Ask DocDesk**, or
-**Ctrl+K**). It can look things up, sort and filter your lists, record sales,
-add, change or delete records, order and receive stock, run reports and export
-files. Every change waits for you to click Confirm.
+**Ctrl+J**). It can look things up, sort and filter your lists, record sales,
+add, change or delete records, order and receive stock, run reports, back up
+the database and export files. Every change waits for you to click Confirm.
 
 **Without a key** the rest of DocDesk works normally and the assistant says it
 isn't connected.
@@ -120,28 +120,40 @@ drop-in.
 
 ## 3. Database — only when deploying
 
-Locally DocDesk keeps everything in `server/db/docdesk.sqlite` and needs
-nothing. But most hosts wipe the filesystem on redeploy, so a deployed copy
-needs a real database.
+Locally DocDesk runs **PostgreSQL 18 embedded** (PGlite) with its data in
+`server/db/pgdata/`, and needs nothing installed. But most hosts wipe the
+filesystem on redeploy, so a deployed copy needs a hosted PostgreSQL.
 
-**The code is already written for this** — `server/db/index.js` picks its driver
-from the environment, so deploying is a variable, not a rewrite.
-
-| Option | Free tier | Notes |
-|---|---|---|
-| [Neon](https://neon.tech) | 0.5 GB, scales to zero | Good default. Doesn't force-pause. |
-| [Supabase](https://supabase.com) | 500 MB, 2 projects | Pauses after ~1 week idle. |
-| [Render Postgres](https://render.com) | 1 GB | Free instance deleted after 90 days. |
+**Nothing in the code changes** — the same migrations, triggers and queries run
+on both. Set one variable:
 
 ```
 DATABASE_URL=postgresql://user:password@host:5432/dbname
 ```
 
-Leave it **unset** for normal use. Setting it without a real database behind it
-stops the server starting.
+On first start DocDesk creates every table, trigger, view and function itself.
 
-> Not yet tested against a real Postgres — the driver is written and the SQL is
-> portable, but it has only ever run on SQLite. Worth an hour before you deploy.
+| Option | Free tier | Notes |
+|---|---|---|
+| [Neon](https://neon.tech) | 0.5 GB, scales to zero | Good default. Doesn't force-pause. |
+| [Supabase](https://supabase.com) | 500 MB, 2 projects | Pauses after ~1 week idle. Use the pooled connection string. |
+| [Render Postgres](https://render.com) | 1 GB | Free instance deleted after 90 days. |
+
+**Requirements for the hosted database**
+
+- **PostgreSQL 14 or newer.** Tested against PostgreSQL 18 locally and a real server.
+- **UTF8 encoding.** Every provider above defaults to it. A database created with a Windows
+  code page (WIN1252) can't store `₹`; the server prints a warning at start if it sees one.
+- **`pg_trgm`** is used for typo-tolerant search when the provider allows it (all three do);
+  without it search falls back to plain "contains" matching.
+
+**Moving your local data up:** on the Database page, **Backups → Back up now**, download
+the file, start the deployed copy, and **Restore from a file** there (with `DB_ADMIN=on`
+set for that one step).
+
+> **A deployed DocDesk has no sign-in yet.** That's why the SQL console's
+> "Allow changes", restore and maintenance are **off** on a hosted database
+> unless you set `DB_ADMIN=on`. Reading, backups and exports stay available.
 
 ---
 
@@ -150,7 +162,15 @@ stops the server starting.
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | 5000 | API port |
-| `SQLITE_PATH` | `server/db/docdesk.sqlite` | Where the local database file lives |
+| `DATABASE_URL` | unset | Use a hosted PostgreSQL instead of the embedded one |
+| `DATABASE_SSL` | on | Set to `off` for a local PostgreSQL server with no TLS |
+| `DB_POOL_MAX` | 10 | Connections kept open to a hosted database |
+| `PGDATA_DIR` | `server/db/pgdata` | Where the embedded database keeps its files |
+| `DB_ADMIN` | on (embedded), off (hosted) | Allow changes from the SQL console, restores, maintenance and "clear all records" |
+| `SQL_CONSOLE_TIMEOUT_MS` | 15000 | Longest a console query may run before it is stopped |
+| `AUTO_BACKUP` | on (embedded), off (hosted) | Daily automatic backup; the last 14 are kept |
+| `BACKUP_DIR` | `server/backups` | Where backups are written |
 | `MAX_UPLOAD_MB` | 25 | Largest file the Files page accepts |
+| `UPLOAD_DIR` | `server/uploads` | Where uploaded files are stored |
 | `CORS_ORIGIN` | any | Restrict which site may call the API. Set this when deploying. |
-| `DATABASE_SSL` | on | Set to `off` for a local Postgres with no TLS |
+| `SQLITE_PATH` | `server/db/docdesk.sqlite` | Only read once: an old SQLite file found here is imported into PostgreSQL on first start, then renamed |
