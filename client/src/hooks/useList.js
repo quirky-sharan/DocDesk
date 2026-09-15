@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  */
 export function useList(fetcher, { initialSort, initialDir = 'asc', filters = {}, pageSize = 25 } = {}) {
   const [rows, setRows] = useState([]);
-  const [meta, setMeta] = useState({ total: 0, page: 1, pageCount: 1 });
+  const [meta, setMeta] = useState({ total: 0, page: 1, pageCount: 1, pageSize });
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState(initialSort);
   const [dir, setDir] = useState(initialDir);
@@ -34,6 +34,7 @@ export function useList(fetcher, { initialSort, initialDir = 'asc', filters = {}
         total: data.total ?? 0,
         page: data.page ?? 1,
         pageCount: data.pageCount ?? 1,
+        pageSize: data.pageSize ?? pageSize,
       });
       setError(null);
     } catch (err) {

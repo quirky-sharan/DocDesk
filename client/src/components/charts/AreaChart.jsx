@@ -113,12 +113,15 @@ export default function AreaChart({
             </text>
           ))}
 
+          {/* The shape itself morphs with a CSS transition on `d` (where the
+              browser supports it); motion only handles the reveal. */}
           <motion.path
             d={area}
             fill={`url(#${gradientId})`}
-            initial={false}
-            animate={{ d: area, opacity: drawn ? 1 : 0 }}
-            transition={{ d: { duration: 0.6, ease: EASE_OUT }, opacity: { duration: 0.9, delay: drawn && !reduced ? 0.5 : 0 } }}
+            style={{ transition: 'd 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+            initial={reduced ? false : { opacity: 0 }}
+            animate={{ opacity: drawn ? 1 : 0 }}
+            transition={{ duration: 0.9, delay: drawn && !reduced ? 0.5 : 0 }}
           />
           <motion.path
             key={data.length}
@@ -128,9 +131,10 @@ export default function AreaChart({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            style={{ transition: 'd 600ms cubic-bezier(0.16, 1, 0.3, 1)' }}
             initial={reduced ? false : { pathLength: 0 }}
-            animate={{ d: line, pathLength: drawn ? 1 : 0 }}
-            transition={{ pathLength: { duration: 1.4, ease: EASE_OUT }, d: { duration: 0.6, ease: EASE_OUT } }}
+            animate={{ pathLength: drawn ? 1 : 0 }}
+            transition={{ duration: 1.4, ease: EASE_OUT }}
           />
 
           {hovered && (

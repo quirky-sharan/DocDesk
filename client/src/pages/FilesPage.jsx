@@ -1,165 +1,200 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  Download, Eye, File as FileIcon, FileImage, FileSpreadsheet, FileText, FolderOpen, HardDrive, LayoutGrid, Pencil,
+  Presentation, Rows3, Trash2, UploadCloud,
+} from 'lucide-react';
 import { api, fileContentUrl } from '../api/client';
 import { useList } from '../hooks/useList';
 import { useAssistantView } from '../assistant/useAssistantView';
 import {
-  PageHeader, ErrorNote, Table, Modal, Field, Badge, ConfirmButton,
-  ExportButtons, SearchInput, Select, Pagination, formatBytes,
+  Badge, Button, ConfirmButton, Empty, ErrorNote, ExportMenu, Field, Modal, PageHeader, Pagination, SearchInput,
+  SegmentedControl, Table, useToast,
 } from '../components/ui';
+import { formatBytes, formatDate, formatRelative } from '../lib/format';
+import { cn } from '../lib/cn';
 
-const KINDS = [
-  ['image', 'Images'],
-  ['pdf', 'PDFs'],
-  ['document', 'Word & Excel'],
-  ['data', 'Text & CSV'],
-];
+const KINDS = [['', 'All'], ['image', 'Images'], ['pdf', 'PDFs'], ['document', 'Office'], ['data', 'Text & CSV']];
+const PREVIEWABLE = /^(image\/(jpeg|png|gif|webp)|application\/pdf|text\/plain)/;
 
-const PREVIEWABLE = /^(image\/|application\/pdf|text\/plain)/;
-
-function kindLabel(mime) {
-  if (mime.startsWith('image/')) return { tone: 'blue', label: 'Image' };
-  if (mime === 'application/pdf') return { tone: 'red', label: 'PDF' };
-  if (mime.includes('spreadsheet') || mime.includes('excel')) return { tone: 'green', label: 'Spreadsheet' };
-  if (mime.includes('word') || mime.includes('document')) return { tone: 'blue', label: 'Document' };
-  if (mime.includes('presentation') || mime.includes('powerpoint')) return { tone: 'amber', label: 'Slides' };
-  if (mime === 'text/csv') return { tone: 'green', label: 'CSV' };
-  if (mime.startsWith('text/') || mime === 'application/json') return { tone: 'slate', label: 'Text' };
-  return { tone: 'slate', label: 'File' };
+function kindOf(mime = '') {
+  if (mime.startsWith('image/')) return { tone: 'blue', label: 'Image', icon: FileImage, hue: '#0a84ff' };
+  if (mime === 'application/pdf') return { tone: 'red', label: 'PDF', icon: FileText, hue: '#ff453a' };
+  if (mime.includes('spreadsheet') || mime.includes('excel') || mime === 'text/csv') return { tone: 'green', label: 'Spreadsheet', icon: FileSpreadsheet, hue: '#30d158' };
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return { tone: 'amber', label: 'Slides', icon: Presentation, hue: '#ff9f0a' };
+  if (mime.includes('word') || mime.includes('document')) return { tone: 'blue', label: 'Document', icon: FileText, hue: '#5e5ce6' };
+  return { tone: 'slate', label: 'File', icon: FileIcon, hue: '#8e8e93' };
 }
 
 export default function FilesPage() {
   const [kind, setKind] = useState('');
   const [info, setInfo] = useState(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading] = useState(null);
   const [preview, setPreview] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem('docdesk.files.view') || 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+  const toast = useToast();
 
-  const fetcher = useCallback((params) => api.files.list(params), []);
-  const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { kind } });
+  const fetcher = useCallback((p) => api.files.list(p), []);
+  const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { kind }, pageSize: 24 });
   useAssistantView('files', list, { kind: setKind }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   useEffect(() => {
     api.files.info().then(setInfo).catch(() => {});
   }, [list.meta.total]);
 
+  function changeView(next) {
+    setView(next);
+    try {
+      localStorage.setItem('docdesk.files.view', next);
+    } catch {
+      // Optional.
+    }
+  }
+
   async function upload(fileList, description) {
     if (!fileList?.length) return;
-    setUploading(true);
+    setUploading({ count: fileList.length });
     list.setError(null);
     try {
       const form = new FormData();
       for (const file of fileList) form.append('files', file);
       if (description) form.append('description', description);
-      await api.files.upload(form);
+      const result = await api.files.upload(form);
+      toast.success(`${result.files.length} file${result.files.length === 1 ? '' : 's'} uploaded`, { description: result.files.map((f) => f.original_name).join(', ') });
       await list.reload();
     } catch (err) {
       list.setError(err.message);
     } finally {
-      setUploading(false);
+      setUploading(null);
     }
   }
 
-  async function remove(id) {
+  async function remove(file) {
     try {
-      await api.files.remove(id);
+      await api.files.remove(file.id);
+      toast.success('File deleted', { description: file.original_name });
       await list.reload();
     } catch (err) {
       list.setError(err.message);
     }
   }
+
+  const actions = (f) => (
+    <div className="flex justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {PREVIEWABLE.test(f.mime_type) && <button type="button" className="btn-edit btn-icon" onClick={() => setPreview(f)} aria-label="Preview"><Eye size={14} /></button>}
+      <a className="btn-edit btn-icon" href={fileContentUrl(f.id, { download: true })} aria-label="Download"><Download size={14} /></a>
+      <button type="button" className="btn-edit btn-icon" onClick={() => setEditing(f)} aria-label="Edit note"><Pencil size={14} /></button>
+      <ConfirmButton className="btn-danger btn-icon" icon={Trash2} title="Delete" message={`Delete "${f.original_name}"? The file is removed from disk too.`} onConfirm={() => remove(f)} />
+    </div>
+  );
 
   const columns = [
     {
       key: 'original_name',
       label: 'File',
-      render: (f) => (
-        <div>
-          <div className="font-medium">{f.original_name}</div>
-          {f.description && <div className="text-xs muted">{f.description}</div>}
-        </div>
-      ),
-    },
-    {
-      key: 'mime_type',
-      label: 'Type',
       render: (f) => {
-        const { tone, label } = kindLabel(f.mime_type);
-        return <Badge tone={tone}>{label}</Badge>;
+        const k = kindOf(f.mime_type);
+        const Icon = k.icon;
+        return (
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-[12px]" style={{ background: `${k.hue}1f`, color: k.hue }}><Icon size={17} /></span>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{f.original_name}</p>
+              {f.description && <p className="truncate text-[12px] text-ink-3">{f.description}</p>}
+            </div>
+          </div>
+        );
       },
     },
-    { key: 'size_bytes', label: 'Size', align: 'right', render: (f) => formatBytes(f.size_bytes) },
-    {
-      key: 'related_type',
-      label: 'Attached to',
-      render: (f) => (f.related_type ? `${f.related_type} #${f.related_id}` : '—'),
-    },
-    { key: 'created_at', label: 'Added', render: (f) => new Date(f.created_at).toLocaleDateString() },
-    {
-      key: 'actions',
-      label: '',
-      sortable: false,
-      align: 'right',
-      render: (f) => (
-        <div className="flex justify-end gap-2">
-          {PREVIEWABLE.test(f.mime_type) && (
-            <button className="btn-edit" onClick={() => setPreview(f)}>View</button>
-          )}
-          <a className="btn-edit" href={fileContentUrl(f.id, { download: true })}>Download</a>
-          <button className="btn-edit" onClick={() => setEditing(f)}>Rename</button>
-          <ConfirmButton
-            message={`Delete "${f.original_name}"? This removes the file from your computer too.`}
-            onConfirm={() => remove(f.id)}
-          >
-            Delete
-          </ConfirmButton>
-        </div>
-      ),
-    },
+    { key: 'mime_type', label: 'Type', render: (f) => <Badge tone={kindOf(f.mime_type).tone}>{kindOf(f.mime_type).label}</Badge> },
+    { key: 'size_bytes', label: 'Size', align: 'right', render: (f) => <span className="tabular text-ink-2">{formatBytes(f.size_bytes)}</span> },
+    { key: 'created_at', label: 'Added', render: (f) => <span className="text-ink-2">{formatRelative(f.created_at)}</span> },
+    { key: 'actions', label: '', sortable: false, align: 'right', render: actions },
   ];
+
+  const usedPct = info ? Math.min((info.totalBytes / (1024 * 1024 * 1024)) * 100, 100) : 0;
 
   return (
     <div>
-      <PageHeader title="Files" subtitle="Invoices, photos, delivery notes — anything worth keeping.">
-        <ExportButtons table="files" params={{ search: list.search }} />
+      <PageHeader title="Files" subtitle="Invoices, photos, delivery notes - anything worth keeping." eyebrow="Workspace" icon={FolderOpen}>
+        <ExportMenu table="files" params={{ search: list.search, kind }} label="Export list" />
       </PageHeader>
 
       <ErrorNote error={list.error} onDismiss={() => list.setError(null)} />
 
-      <DropZone onFiles={upload} uploading={uploading} info={info} />
-
-      <div className="mb-4 mt-6 flex flex-wrap items-center gap-3">
-        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search files…" />
-        <Select value={kind} onChange={setKind} options={KINDS} placeholder="All types" />
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
+        <DropZone onFiles={upload} uploading={uploading} info={info} />
         {info && (
-          <span className="text-sm muted">
-            {info.count} files · {formatBytes(info.totalBytes)} stored
-          </span>
+          <div className="panel flex flex-col justify-between p-5">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-ink-2"><HardDrive size={15} /> Storage</div>
+            <div>
+              <p className="text-[30px] font-semibold tracking-[-0.035em]">{formatBytes(info.totalBytes)}</p>
+              <p className="text-[12.5px] text-ink-3">{info.count} file{info.count === 1 ? '' : 's'} · up to {formatBytes(info.maxFileBytes)} each</p>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full" style={{ background: 'var(--chart-track)' }}>
+              <motion.div className="h-full rounded-full" style={{ background: 'var(--series-1)' }} initial={{ width: 0 }} animate={{ width: `${Math.max(usedPct, info.totalBytes ? 1.5 : 0)}%` }} transition={{ type: 'spring', stiffness: 80, damping: 18 }} />
+            </div>
+            <p className="mt-1.5 text-[11.5px] text-ink-3">of the first GB</p>
+          </div>
         )}
-        {list.loading && <span className="text-sm subtle">Loading…</span>}
       </div>
 
-      <Table
-        columns={columns}
-        rows={list.rows}
-        sort={list.sort}
-        dir={list.dir}
-        onSort={list.toggleSort}
-        empty={list.search || kind ? 'No files match that.' : 'No files yet. Drop one above to get started.'}
-      />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <SearchInput value={list.search} onChange={list.setSearch} placeholder="Search files and notes…" />
+        <SegmentedControl size="sm" value={kind} onChange={setKind} options={KINDS} ariaLabel="File type" />
+        <SegmentedControl size="sm" className="ml-auto" value={view} onChange={changeView} options={[['grid', 'Grid', LayoutGrid], ['list', 'List', Rows3]]} ariaLabel="View" />
+      </div>
+
+      {view === 'list' ? (
+        <Table columns={columns} rows={list.rows} loading={list.loading} sort={list.sort} dir={list.dir} onSort={list.toggleSort} emptyIcon={FolderOpen} emptyTitle="No files" empty={list.search || kind ? 'Nothing matches that.' : 'Drop files above to keep them here.'} />
+      ) : list.rows.length === 0 && !list.loading ? (
+        <Empty icon={FolderOpen} title="No files" message={list.search || kind ? 'Nothing matches that.' : 'Drop files above to keep them here.'} />
+      ) : (
+        <motion.ul layout className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6" style={{ opacity: list.loading ? 0.55 : 1 }}>
+          <AnimatePresence>
+            {list.rows.map((f, i) => {
+              const k = kindOf(f.mime_type);
+              const Icon = k.icon;
+              const isImage = /^image\/(jpeg|png|gif|webp)/.test(f.mime_type);
+              return (
+                <motion.li key={f.id} layout initial={{ opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: Math.min(i, 12) * 0.025, type: 'spring', stiffness: 300, damping: 26 }}>
+                  <div className="group card-hover panel relative overflow-hidden">
+                    <button type="button" className="block w-full" onClick={() => (PREVIEWABLE.test(f.mime_type) ? setPreview(f) : window.open(fileContentUrl(f.id, { download: true }), '_self'))}>
+                      <div className="relative grid aspect-[4/3] place-items-center overflow-hidden" style={{ background: `linear-gradient(160deg, ${k.hue}22, ${k.hue}08)` }}>
+                        {isImage ? (
+                          <img src={fileContentUrl(f.id)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                        ) : (
+                          <motion.span whileHover={{ rotate: -6, scale: 1.08 }} className="grid h-14 w-14 place-items-center rounded-2xl" style={{ background: 'rgb(var(--c-elevated))', color: k.hue, boxShadow: 'var(--shadow-md)' }}>
+                            <Icon size={24} />
+                          </motion.span>
+                        )}
+                      </div>
+                    </button>
+                    <div className="p-3">
+                      <p className="truncate text-[13.5px] font-medium" title={f.original_name}>{f.original_name}</p>
+                      <p className="truncate text-[12px] text-ink-3">{formatBytes(f.size_bytes)} · {formatDate(f.created_at, { day: 'numeric', month: 'short' })}</p>
+                    </div>
+                    <div className="absolute right-2 top-2 rounded-full opacity-0 transition-opacity group-hover:opacity-100" style={{ background: 'var(--glass-strong)', boxShadow: 'var(--shadow-md)' }}>{actions(f)}</div>
+                  </div>
+                </motion.li>
+              );
+            })}
+          </AnimatePresence>
+        </motion.ul>
+      )}
       <Pagination meta={list.meta} page={list.page} onPage={list.setPage} loading={list.loading} />
 
-      {preview && <PreviewModal file={preview} onClose={() => setPreview(null)} />}
-      {editing && (
-        <RenameModal
-          file={editing}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null);
-            await list.reload();
-          }}
-          onError={list.setError}
-        />
-      )}
+      <AnimatePresence>{preview && <PreviewModal key="preview" file={preview} onClose={() => setPreview(null)} />}</AnimatePresence>
+      <AnimatePresence>
+        {editing && <NoteModal key="note" file={editing} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); toast.success('Note saved'); await list.reload(); }} />}
+      </AnimatePresence>
     </div>
   );
 }
@@ -168,65 +203,31 @@ function DropZone({ onFiles, uploading, info }) {
   const [dragging, setDragging] = useState(false);
   const [description, setDescription] = useState('');
   const inputRef = useRef(null);
-
-  function handleDrop(e) {
-    e.preventDefault();
-    setDragging(false);
-    onFiles(Array.from(e.dataTransfer.files), description);
-    setDescription('');
-  }
+  const depth = useRef(0);
 
   return (
     <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
+      onDragEnter={(e) => { e.preventDefault(); depth.current += 1; setDragging(true); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={() => { depth.current -= 1; if (depth.current <= 0) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); depth.current = 0; setDragging(false); onFiles(Array.from(e.dataTransfer.files), description); setDescription(''); }}
+      className="relative overflow-hidden rounded-[24px] px-6 py-8 text-center transition-all duration-300"
+      style={{
+        background: dragging ? 'var(--accent-soft)' : 'rgb(var(--c-surface))',
+        boxShadow: dragging ? '0 0 0 2px rgb(var(--c-accent)), var(--shadow-lg)' : '0 0 0 1px var(--line), var(--shadow-sm)',
+        transform: dragging ? 'scale(1.005)' : 'none',
       }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={handleDrop}
-      className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-        dragging ? 'border-accent bg-accent-soft' : 'border-token-strong bg-surface'
-      }`}
     >
-      <p className="text-lg font-medium">
-        {uploading ? 'Uploading…' : 'Drop files here'}
+      <motion.div animate={dragging ? { y: -8, scale: 1.1 } : uploading ? { y: [0, -6, 0] } : { y: 0, scale: 1 }} transition={uploading ? { repeat: Infinity, duration: 1.2 } : { type: 'spring', stiffness: 300, damping: 18 }} className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl" style={{ background: 'linear-gradient(145deg, #3aa0ff, #5e5ce6)', boxShadow: '0 10px 24px -8px rgb(10 132 255 / 0.6)' }}>
+        <UploadCloud size={24} color="#fff" />
+      </motion.div>
+      <p className="text-[16px] font-semibold">{uploading ? `Uploading ${uploading.count} file${uploading.count === 1 ? '' : 's'}…` : dragging ? 'Drop to upload' : 'Drop files here'}</p>
+      <p className="mt-1 text-[13px] text-ink-2">
+        or <button type="button" className="font-medium text-accent-ink hover:underline" onClick={() => inputRef.current?.click()} disabled={Boolean(uploading)}>choose from your computer</button>
       </p>
-      <p className="mt-1 text-sm muted">
-        or{' '}
-        <button
-          type="button"
-          className="link underline"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-        >
-          choose from your computer
-        </button>
-      </p>
-      {info && (
-        <p className="mt-2 text-xs subtle">
-          {info.allowed}. Up to {formatBytes(info.maxFileBytes)} each.
-        </p>
-      )}
-
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          onFiles(Array.from(e.target.files), description);
-          setDescription('');
-          // Reset so picking the same file twice in a row still fires onChange.
-          e.target.value = '';
-        }}
-      />
-
-      <input
-        className="input-field mx-auto mt-4 max-w-sm"
-        placeholder="Optional note about these files"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-      />
+      {info && <p className="mt-1 text-[12px] text-ink-3">{info.allowed}</p>}
+      <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => { onFiles(Array.from(e.target.files), description); setDescription(''); e.target.value = ''; }} />
+      <input className="input-field mx-auto mt-4 max-w-sm rounded-full text-center" placeholder="Optional note for these files" value={description} onChange={(e) => setDescription(e.target.value)} />
     </div>
   );
 }
@@ -234,39 +235,28 @@ function DropZone({ onFiles, uploading, info }) {
 function PreviewModal({ file, onClose }) {
   const url = fileContentUrl(file.id);
   const isImage = file.mime_type.startsWith('image/');
-
   return (
-    <Modal title={file.original_name} onClose={onClose} wide>
-      <div className="max-h-[65vh] overflow-auto rounded-lg border border-token bg-sunken p-2">
+    <Modal title={file.original_name} subtitle={`${formatBytes(file.size_bytes)} · ${kindOf(file.mime_type).label}`} onClose={onClose} size="xl">
+      <div className={cn('overflow-hidden rounded-2xl', !isImage && 'h-[65vh]')} style={{ background: 'var(--wash)' }}>
         {isImage ? (
-          <img src={url} alt={file.original_name} className="mx-auto max-h-[60vh]" />
+          <motion.img initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} src={url} alt={file.original_name} className="mx-auto max-h-[68vh]" />
         ) : (
-          // Sandboxed: uploaded documents render with no script or same-origin
-          // access, so nothing in a file can act on the app.
-          <iframe
-            src={url}
-            title={file.original_name}
-            sandbox=""
-            className="h-[60vh] w-full rounded bg-surface"
-          />
+          // Sandboxed: uploaded documents render with no scripts and no access to the app.
+          <iframe src={url} title={file.original_name} sandbox="" className="h-full w-full" />
         )}
       </div>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-sm muted">
-          {formatBytes(file.size_bytes)} · {file.mime_type}
-        </span>
-        <div className="flex gap-2">
-          <button className="btn-secondary" onClick={onClose}>Close</button>
-          <a className="btn-primary" href={fileContentUrl(file.id, { download: true })}>Download</a>
-        </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>Close</Button>
+        <a className="btn-primary" href={fileContentUrl(file.id, { download: true })}><Download size={15} /> Download</a>
       </div>
     </Modal>
   );
 }
 
-function RenameModal({ file, onClose, onSaved, onError }) {
+function NoteModal({ file, onClose, onSaved }) {
   const [description, setDescription] = useState(file.description || '');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
   async function submit(e) {
     e.preventDefault();
@@ -275,29 +265,19 @@ function RenameModal({ file, onClose, onSaved, onError }) {
       await api.files.update(file.id, { description });
       await onSaved();
     } catch (err) {
-      onError(err.message);
+      setError(err.message);
       setBusy(false);
     }
   }
 
   return (
-    <Modal title="Edit note" onClose={onClose}>
+    <Modal title="Edit note" subtitle={file.original_name} icon={Pencil} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm muted">{file.original_name}</p>
-        <Field label="Note" hint="What this file is, so you can find it later">
-          <textarea
-            className="input-field"
-            rows="3"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            autoFocus
-          />
-        </Field>
+        <ErrorNote error={error} onDismiss={() => setError(null)} />
+        <Field label="Note" hint="What this file is, so you can find it later"><textarea className="input-field" rows="3" value={description} onChange={(e) => setDescription(e.target.value)} autoFocus /></Field>
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={busy}>Save</Button>
         </div>
       </form>
     </Modal>
