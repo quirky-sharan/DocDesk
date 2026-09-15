@@ -148,8 +148,8 @@ exports.create = async (req, res, next) => {
         );
         if (line.productId) {
           await tx.query(
-            'UPDATE products SET stock_quantity = stock_quantity - $1, updated_at = $2 WHERE id = $3',
-            [line.quantity, new Date().toISOString(), line.productId]
+            'UPDATE products SET stock_quantity = stock_quantity - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [line.quantity, line.productId]
           );
           touchedProducts.push(line.productId);
         }

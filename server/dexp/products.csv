@@ -1,6 +1,0 @@
-﻿Id,Sku,Name,Description,Category,Unit,Cost price,Sale price,Stock quantity,Reorder level,Supplier id,Is active,Created at,Updated at
-1,SKU-001,A4 Paper Ream,,Stationery,ream,210,285,56,10,1,1,2026-09-15 05:51:58,2026-09-15T05:53:07.027Z
-2,SKU-002,Ballpoint Pen (Blue),,Stationery,box,90,140,6,12,2,1,2026-09-15 05:51:58,2026-09-15 05:51:58
-3,SKU-003,Hand Sanitiser 500ml,,Hygiene,bottle,115,180,30,8,1,1,2026-09-15 05:51:58,2026-09-15T05:53:07.028Z
-4,SKU-004,Nitrile Gloves (M),,Hygiene,box,340,460,22,10,2,1,2026-09-15 05:51:58,2026-09-15 05:51:58
-5,SKU-005,Thermal Till Roll,,Consumables,roll,18,30,147,40,1,1,2026-09-15 05:51:58,2026-09-15 05:51:58

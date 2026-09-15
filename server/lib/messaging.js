@@ -92,8 +92,8 @@ async function sendQueued({ limit = 50 } = {}) {
   for (const message of pending) {
     console.log(`[messaging:mock] would send via ${message.channel} to ${message.recipient || '(no recipient)'}: ${message.subject}`);
     const { rows } = await db.query(
-      `UPDATE message_log SET status = 'sent', sent_at = $1 WHERE id = $2 RETURNING *`,
-      [new Date().toISOString(), message.id]
+      `UPDATE message_log SET status = 'sent', sent_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+      [message.id]
     );
     sent.push(rows[0]);
   }

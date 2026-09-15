@@ -193,8 +193,8 @@ exports.receive = async (req, res, next) => {
 
         if (item.product_id) {
           await tx.query(
-            'UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = $2 WHERE id = $3',
-            [receiving, new Date().toISOString(), item.product_id]
+            'UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [receiving, item.product_id]
           );
           touchedProducts.push(item.product_id);
         }

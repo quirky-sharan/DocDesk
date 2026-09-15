@@ -97,10 +97,10 @@ exports.update = async (req, res, next) => {
 
     const names = Object.keys(fields);
     const values = Object.values(fields);
-    values.push(new Date().toISOString(), req.params.id);
+    values.push(req.params.id);
     const { rows } = await db.query(
       `UPDATE products SET ${names.map((n, i) => `${n} = $${i + 1}`).join(', ')},
-         updated_at = $${values.length - 1}
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $${values.length} RETURNING *`,
       values
     );
@@ -142,8 +142,8 @@ exports.adjustStock = async (req, res, next) => {
     }
 
     const { rows } = await db.query(
-      `UPDATE products SET stock_quantity = $1, updated_at = $2 WHERE id = $3 RETURNING *`,
-      [next_, new Date().toISOString(), product.id]
+      `UPDATE products SET stock_quantity = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
+      [next_, product.id]
     );
     const alerts = await checkStockLevels(null, [product.id]);
     res.json({ product: rows[0], reason: reason || null, alertsQueued: alerts.length });
