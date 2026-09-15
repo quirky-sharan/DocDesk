@@ -7,6 +7,7 @@ import {
 } from '../components/ui';
 import ProductDetail from '../components/ProductDetail';
 import AskBar from '../components/AskBar';
+import { useAskOutcome } from '../hooks/useAskOutcome';
 
 const BLANK = {
   name: '', sku: '', category: '', unit: 'unit',
@@ -54,26 +55,12 @@ export default function InventoryPage() {
     await Promise.all([list.reload(), refreshAside()]);
   }
 
-  // A sort or filter from the ask bar changes what is on screen; anything that
-  // altered the table just needs a reload.
-  function handleAsk(outcome) {
-    if (outcome.kind === 'changed') {
-      afterChange();
-      return;
-    }
-    const op = outcome.operation;
-    if (op?.type === 'sort') {
-      list.setSort(op.column);
-      list.setDir(op.direction);
-      list.setPage(1);
-    } else if (op?.type === 'filter') {
-      // The list endpoint understands category and stock filters directly;
-      // anything else falls back to a search so the user still sees a change.
-      const condition = op.conditions[0];
-      if (condition.column === 'category') setCategory(String(condition.value));
-      else list.setSearch(String(condition.value));
-    }
-  }
+  // This page has a real category control, so a filter on that column drives
+  // the dropdown rather than falling back to a text search.
+  const handleAsk = useAskOutcome(list, {
+    onChanged: afterChange,
+    filterHandlers: { category: (value) => setCategory(String(value)) },
+  });
 
   async function save(form) {
     try {

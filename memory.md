@@ -396,3 +396,88 @@ against whatever is actually painted behind it (walking up for the first
 non-transparent ancestor). Nothing below 2.4:1 in either theme, no console
 output. Re-run that audit after any styling change — it catches a missed
 retint far faster than looking at screenshots.
+
+---
+
+## 2026-09-15 — Phase 4: the natural-language layer
+
+### The decision everything else rests on
+
+**The model never writes SQL.** It picks one operation from a fixed vocabulary
+and fills in its fields. `lib/nlq/operations.js` validates every identifier
+against the live schema; `lib/nlq/execute.js` builds the statement itself.
+
+So the worst a hallucinated — or deliberately poisoned — model response can do
+is produce a **rejected operation**. It can never become an executed statement.
+This was tested by bypassing the model entirely and posting hostile operations
+straight to `/api/ai/apply`: SQL in column names, SQL in the table name,
+`{"type":"exec_sql"}`, protected-column drops. All refused, both tables intact.
+
+**Do not add an operation type that takes raw SQL, an expression string, or a
+free-form WHERE clause.** That would undo the whole design.
+
+Related: `PROTECTED_COLUMNS` (id, created_at, reference, …) can't be renamed,
+dropped or bulk-overwritten. Without that, one plausible-sounding request
+quietly breaks receipts or stock.
+
+### Nothing applies without confirmation
+
+A request becomes a described operation **plus a live preview**, and the user
+confirms. Read-only ops (sort/filter/summarize) change the view, not the data —
+`apply` returns `applied: false` for those on purpose. Destructive ones say so
+and colour the confirm button as such.
+
+`/api/ai/apply` **re-validates** the operation rather than trusting it. The
+request arrives from a browser, so the shape that was approved is not
+necessarily the shape that comes back.
+
+### Provider comparison
+
+Every serious free option speaks the OpenAI chat-completions shape, so
+`lib/llm/index.js` is one client and a new provider is a base URL plus a model
+name.
+
+| | Free tier | Latency | JSON mode | Verdict |
+|---|---|---|---|---|
+| **Groq** | ~14.4k req/day, 30/min, no card | sub-second typically | yes | **Chosen.** Fastest by a wide margin, most generous tier, and JSON mode removes a class of parsing failures. |
+| OpenRouter | `:free` models, rate-limited, can queue | seconds, variable | yes | Good escape hatch for trying models; too variable to default to. |
+| Together | $1 credit + some free models | moderate | yes | Allowance runs out. |
+| Local Ollama | unlimited, private | slow without a GPU | no | Right answer for privacy, wrong default for a shop laptop. |
+
+**This ranking is from documented limits and API shape, not measured latency —
+no key existed when it was written.** `npm run bench:ai` exists to settle it
+properly: 12 cases scored for correctness and latency, including two that must
+be *refused* rather than guessed at. **Run it once a key is in and record the
+real numbers here.**
+
+### It works with no key
+
+A rule-based interpreter handles the common phrasings, with an alias table so
+"price" → `sale_price` and "qty" → `stock_quantity`. Two reasons, not one:
+the feature does something useful before setup, **and it is a cheap correctness
+check** — if the rules and the model disagree on an obvious request, the prompt
+has drifted.
+
+Found while testing: the on-screen example said *"sort by price"* but the
+columns are `cost_price`/`sale_price`, so the fallback couldn't match its own
+example. Fixed by adding the alias table rather than by weakening the example.
+
+### Gotchas
+
+- **Anything altering a table must call `invalidateSchemaCache(table)`** or
+  later requests validate against a shape that no longer exists. `execute.js`
+  does this for add/rename/drop.
+- `buildWhere` qualifies columns as `t.<col>`; `UPDATE … SET` accepts no alias
+  in either dialect, so `set_values` strips it for that statement only.
+- A hostile column name is **sanitised, not rejected** — `x); DROP TABLE…`
+  becomes `x_drop_table_products`. Safe, and the right behaviour for a real user
+  typing punctuation, but it means junk names are creatable.
+- Repeatedly hit during testing: a stale `node` process keeps port 5000 and the
+  new one silently fails to bind, so you test old code. `pkill` doesn't work on
+  Windows — stop it by port with PowerShell.
+
+### Keys
+
+`.gitignore` now covers `.env` at every level explicitly while keeping
+`.env.example` tracked. **Verified with `git check-ignore`, not assumed.**
+Setup instructions for Sharan are in REQUIREMENTS.md.

@@ -6,8 +6,8 @@ small businesses currently getting by on a spreadsheet.
 Built for people who are not technical. Every screen should be obvious, forgiving,
 and hard to break.
 
-> **Status: Phase 3 of 6 — design pass done.**
-> Everything works, in light or dark.
+> **Status: Phase 4 of 6 — the AI layer is in.**
+> Everything works, in light or dark, and you can talk to your tables.
 
 ---
 
@@ -112,6 +112,11 @@ whatever search and sorting you had applied.
 
 **Settings** — your shop's name, address and footer go on every receipt.
 
+**Ask in plain English** — type *"sort by price, cheapest first"* or *"add a
+column for expiry date"* above any table. It shows you what it's about to do,
+with a preview, and waits for you to say yes. Simple requests work out of the
+box; connect a free AI key (see `REQUIREMENTS.md`) and it understands the rest.
+
 **Light or dark** — the toggle in the top bar cycles: match your computer,
 always light, always dark. It remembers your choice.
 
@@ -133,6 +138,9 @@ always light, always dark. It remembers your choice.
 | `GET /api/messages` | queued and sent messages |
 | `POST /api/messages/send` | run the mock sender |
 | `GET /api/export/:table?format=` | csv, xlsx, json or pdf |
+| `GET /api/ai/status` | whether an AI provider is connected |
+| `POST /api/ai/interpret` | plain English in, described operation + preview out |
+| `POST /api/ai/apply` | run an operation the user confirmed |
 | `GET/POST /api/files` | list and upload files |
 | `GET /api/files/:id/content` | preview or download a file |
 | `POST /api/products/import/preview` | dry-run a CSV import |
@@ -157,6 +165,6 @@ return `{ rows, total, page, pageCount }`.
 | 1 | Audit and wire-up — **done** |
 | 2 | Inventory, sales, receipts, exports, stubbed messaging — **done** |
 | 3 | Design pass, light and dark themes — **done** |
-| 4 | Natural language table operations |
+| 4 | Natural language table operations — **done** |
 | 5 | Stabilisation |
 | 6 | Real keys, deployment |
