@@ -12,6 +12,8 @@ const settings = require('../controllers/settings');
 const reports = require('../controllers/reports');
 const importProducts = require('../controllers/importProducts');
 const assistant = require('../controllers/assistant');
+const database = require('../controllers/database');
+const search = require('../controllers/search');
 const { upload, importUpload } = require('../lib/storage');
 
 const router = express.Router();
@@ -30,6 +32,7 @@ router.put('/products/:id', products.update);
 router.delete('/products/:id', products.remove);
 router.post('/products/:id/stock', products.adjustStock);
 router.get('/products/:id/history', products.history);
+router.get('/products/:id/movements', products.movements);
 
 router.get('/customers', customers.list);
 router.post('/customers', customers.create);
@@ -50,6 +53,8 @@ router.put('/sales/:id', sales.update);
 router.delete('/sales/:id', sales.remove);
 router.get('/sales/:id/receipt', sales.receipt);
 router.get('/sales/:id/receipt.pdf', exportsCtrl.receipt);
+router.post('/sales/:id/payments', sales.addPayment);
+router.delete('/sales/:id/payments/:paymentId', sales.removePayment);
 
 router.get('/purchase-orders', purchaseOrders.list);
 router.post('/purchase-orders', purchaseOrders.create);
@@ -81,12 +86,40 @@ router.get('/reports/by-category', reports.byCategory);
 router.get('/reports/by-payment-method', reports.byPaymentMethod);
 router.get('/reports/stock-by-category', reports.stockByCategory);
 router.get('/reports/pulse', reports.pulse);
+router.get('/reports/heatmap', reports.heatmap);
+router.get('/reports/by-weekday', reports.byWeekday);
 router.get('/customers/:id/history', reports.customerHistory);
 
 router.get('/ai/status', assistant.status);
 router.post('/assistant/message', assistant.message);
 router.post('/assistant/confirm', assistant.confirm);
 router.post('/assistant/cancel', assistant.cancel);
+
+// One search box for everything (Spotlight).
+router.get('/search', search.search);
+
+// The Database page.
+router.get('/db/overview', database.overview);
+router.get('/db/tables', database.tables);
+router.get('/db/tables/:name', database.table);
+router.get('/db/tables/:name/rows', database.rows);
+router.get('/db/relationships', database.relationships);
+router.get('/db/routines', database.routines);
+router.get('/db/samples', database.samples);
+router.post('/db/query', database.query);
+router.post('/db/explain', database.explain);
+router.get('/db/activity', database.activity);
+router.get('/db/history/:table/:id', database.history);
+router.get('/db/performance', database.performance);
+router.get('/db/integrity', database.integrity);
+router.post('/db/integrity/:id/fix', database.fix);
+router.get('/db/backups', database.backups);
+router.post('/db/backups', database.createBackup);
+router.get('/db/backups/:name', database.downloadBackup);
+router.delete('/db/backups/:name', database.deleteBackup);
+router.post('/db/restore', database.restore);
+router.get('/db/export.sql', database.exportSql);
+router.post('/db/maintenance', database.maintenance);
 
 router.get('/export', exportsCtrl.options);
 router.get('/export/:table', exportsCtrl.table);

@@ -1,0 +1,6 @@
+{
+  "watch": ["index.js", "controllers", "db/*.js", "db/engine", "db/legacy", "db/migrations", "lib", "middleware", "routes"],
+  "ext": "js,json,sql",
+  "ignore": ["db/pgdata/**", "backups/**", "uploads/**", "node_modules/**"],
+  "delay": 400
+}

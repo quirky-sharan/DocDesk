@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { chat, LlmError } = require('../llm');
 const { TOOLS, toolDefinitions, ToolError } = require('./tools');
-const { describeTable } = require('../tables');
+const { listColumns } = require('../tables');
 const api = require('./internalApi');
 
 const MAX_STEPS = 8;
@@ -26,11 +26,14 @@ function prunePending() {
 async function systemPrompt(page) {
   const [settings, products, customers, suppliers] = await Promise.all([
     api.get('/settings').then((s) => s.values).catch(() => ({})),
-    describeTable('products'),
-    describeTable('customers'),
-    describeTable('suppliers'),
+    listColumns('products'),
+    listColumns('customers'),
+    listColumns('suppliers'),
   ]);
-  const cols = (table) => table.map((c) => c.name).filter((n) => !['id', 'is_active', 'updated_at'].includes(n)).join(', ');
+  const cols = (table) => table
+    .map((c) => c.name)
+    .filter((n) => !['id', 'is_active', 'updated_at', 'row_version'].includes(n) && !n.endsWith('_id'))
+    .join(', ');
   const now = new Date();
 
   return `You are the front-desk receptionist for ${settings.business_name || 'this business'}, working inside DocDesk - the shop's inventory, sales and records app. You are talking to the shop owner or their staff, who are not technical.
@@ -42,7 +45,8 @@ What's in the database:
 - products: ${cols(products)}
 - customers: ${cols(customers)}
 - suppliers: ${cols(suppliers)}
-- sales (receipts S-xxxx, with line items), purchase_orders (PO-xxxx, stock ordered from suppliers), files (uploaded documents), message_log (queued alerts).
+- sales (receipts S-xxxx, with line items and payments - part payments and refunds are recorded as payments), purchase_orders (PO-xxxx, stock ordered from suppliers), files (uploaded documents), message_log (queued alerts).
+- The database is PostgreSQL: every stock change is in a ledger and every edit in an audit trail. It can be backed up.
 
 How to work:
 1. Use tools for every fact about the business. Never guess a number, name, price, stock level or id.

@@ -1,34 +1,39 @@
 const db = require('../db');
 const { listRows, readListQuery } = require('../lib/tables');
-const { fail, text, number, oneOf, id, money } = require('../lib/validate');
-const { checkStockLevels, queueSaleConfirmation } = require('../lib/messaging');
+const { fail, text, number, oneOf, id, money, paymentMethod } = require('../lib/validate');
+const { queueSaleConfirmation } = require('../lib/messaging');
+const { lineTotalCents, taxCents, toCents, fromCents } = require('../lib/money');
 const { readAll: readSettings } = require('./settings');
+const { resolveTimezone } = require('../lib/timezone');
 
 const PAYMENT_STATUSES = ['unpaid', 'partial', 'paid', 'refunded'];
 
 async function loadSale(saleId, runner = db) {
   const { rows } = await runner.query(
-    `SELECT s.*, c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
-     FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
-     WHERE s.id = $1`,
+    `SELECT s.*, s.total - s.amount_paid AS balance_due,
+            c.name AS customer_name, c.phone AS customer_phone, c.email AS customer_email
+       FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+      WHERE s.id = $1`,
     [saleId]
   );
   if (!rows.length) throw fail('Sale not found', 404);
-  const { rows: items } = await runner.query(
-    'SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id',
-    [saleId]
-  );
-  return { ...rows[0], items };
+  const [{ rows: items }, { rows: payments }] = await Promise.all([
+    runner.query('SELECT * FROM sale_items WHERE sale_id = $1 ORDER BY id', [saleId]),
+    runner.query('SELECT * FROM payments WHERE sale_id = $1 ORDER BY paid_at, id', [saleId]),
+  ]);
+  return { ...rows[0], items, payments };
 }
 
 exports.list = async (req, res, next) => {
   try {
     const { payment_status, from, to } = req.query;
+    const dateOnly = (value) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? value : undefined);
     res.json(
       await listRows('sales', {
         ...readListQuery(req.query),
         where: payment_status ? { payment_status } : {},
-        ranges: [{ column: 'created_at', from, to: to ? `${to} 23:59:59` : undefined }],
+        // Whole days in the shop's timezone: "to 15 Sep" includes all of the 15th.
+        ranges: [{ column: 'created_at', from: dateOnly(from), to: dateOnly(to), timezone: await resolveTimezone(req) }],
       })
     );
   } catch (err) {
@@ -45,9 +50,10 @@ exports.get = async (req, res, next) => {
 };
 
 /**
- * Records a sale and moves stock in one transaction, so a sale can never be
- * half-recorded: either the sale, its lines and the stock changes all land, or
- * none of them do.
+ * Records a sale in one transaction: the receipt, its lines, any payment.
+ * The database moves the stock (and refuses to oversell), writes the ledger,
+ * queues low-stock alerts and derives the payment status - so a sale can never
+ * be half-recorded, whoever or whatever records it.
  */
 exports.create = async (req, res, next) => {
   try {
@@ -57,41 +63,39 @@ exports.create = async (req, res, next) => {
 
     const customerId = id(body.customer_id, 'Customer');
     const discount = money(number(body.discount, 'Discount', { min: 0, fallback: 0 }));
-    const taxRate = number(body.tax_rate, 'Tax rate', { min: 0, max: 100, fallback: 0 });
-    const paymentStatus = oneOf(body.payment_status, 'Payment status', PAYMENT_STATUSES, {
-      fallback: 'paid',
-    });
-    const paymentMethod = text(body.payment_method, 'Payment method', { max: 40 });
+    const taxRate = number(body.tax_rate, 'Tax rate', { min: 0, max: 100, fallback: 0, decimals: 2 });
+    const paymentStatus = oneOf(body.payment_status, 'Payment status', ['paid', 'unpaid', 'partial'], { fallback: 'paid' });
+    const method = paymentMethod(body.payment_method, 'Payment method', { fallback: 'cash' });
     const notes = text(body.notes, 'Notes', { max: 2000 });
 
     const newSaleId = await db.transaction(async (tx) => {
+      let customer = null;
       if (customerId) {
-        const { rows } = await tx.query('SELECT id FROM customers WHERE id = $1', [customerId]);
+        const { rows } = await tx.query('SELECT * FROM customers WHERE id = $1', [customerId]);
         if (!rows.length) throw fail('That customer no longer exists', 404);
+        customer = rows[0];
       }
 
       const lines = [];
       for (const [index, raw] of rawItems.entries()) {
         const position = `Item ${index + 1}`;
-        const quantity = number(raw.quantity, `${position} quantity`, { required: true, min: 0.001 });
+        const quantity = number(raw.quantity, `${position} quantity`, { required: true, min: 0.001, decimals: 3 });
         const productId = id(raw.product_id, `${position} product`);
-
         let description = text(raw.description, `${position} description`, { max: 250 });
         let unitPrice = raw.unit_price;
+        let unitCost = 0;
 
         if (productId) {
-          const { rows } = await tx.query('SELECT * FROM products WHERE id = $1', [productId]);
+          const { rows } = await tx.query('SELECT id, name, sale_price, cost_price, stock_quantity FROM products WHERE id = $1', [productId]);
           const product = rows[0];
           if (!product) throw fail(`${position}: that product no longer exists`, 404);
-          if (product.stock_quantity < quantity) {
-            throw fail(
-              `Not enough ${product.name} in stock. You asked for ${quantity} but only ${product.stock_quantity} remain.`
-            );
+          // Friendly early check; the database enforces it regardless.
+          if (Number(product.stock_quantity) < quantity) {
+            throw fail(`Not enough ${product.name} in stock. You asked for ${quantity} but only ${Number(product.stock_quantity)} remain.`);
           }
           description = description || product.name;
-          if (unitPrice === undefined || unitPrice === null || unitPrice === '') {
-            unitPrice = product.sale_price;
-          }
+          if (unitPrice === undefined || unitPrice === null || unitPrice === '') unitPrice = product.sale_price;
+          unitCost = Number(product.cost_price);
         } else if (!description) {
           // A line with no product must at least say what was sold, or the
           // receipt is meaningless.
@@ -99,59 +103,45 @@ exports.create = async (req, res, next) => {
         }
 
         const price = money(number(unitPrice, `${position} price`, { min: 0, fallback: 0 }));
-        lines.push({
-          productId,
-          description,
-          quantity,
-          unitPrice: price,
-          lineTotal: money(quantity * price),
-        });
+        lines.push({ productId, description, quantity, unitPrice: price, unitCost: money(unitCost), cents: lineTotalCents(quantity, price) });
       }
 
-      const subtotal = money(lines.reduce((sum, l) => sum + l.lineTotal, 0));
-      if (discount > subtotal) throw fail('The discount is larger than the sale total');
-      const taxable = subtotal - discount;
-      const tax = money((taxable * taxRate) / 100);
-      const total = money(taxable + tax);
+      // Integer cents throughout, so the totals match the database's exact arithmetic.
+      const subtotalCents = lines.reduce((sum, l) => sum + l.cents, 0n);
+      const discountCents = toCents(discount);
+      if (discountCents > subtotalCents) throw fail('The discount is larger than the sale total');
+      const taxable = subtotalCents - discountCents;
+      const taxAmount = taxCents(taxable, taxRate);
+      const totalCents = taxable + taxAmount;
+      const total = fromCents(totalCents);
+
+      let amountPaid = 0;
+      if (paymentStatus === 'paid') amountPaid = total;
+      if (paymentStatus === 'partial') {
+        amountPaid = money(number(body.amount_paid, 'Amount paid', { required: true, min: 0.01 }));
+        if (amountPaid >= total) throw fail('That covers the whole sale - choose "Paid" instead');
+      }
 
       const { rows: saleRows } = await tx.query(
-        `INSERT INTO sales (customer_id, subtotal, tax, discount, total, payment_status, payment_method, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [customerId, subtotal, tax, discount, total, paymentStatus, paymentMethod, notes]
+        `INSERT INTO sales (customer_id, subtotal, discount, tax_rate, tax, total, payment_status, payment_method, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [customerId, fromCents(subtotalCents), discount, taxRate, fromCents(taxAmount), total, total === 0 ? 'paid' : 'unpaid', method, notes]
       );
-      let sale = saleRows[0];
+      const sale = saleRows[0];
 
-      // Reference is derived from the id so it is guaranteed unique and
-      // human-readable, which needs the row to exist first.
-      const { rows: updated } = await tx.query(
-        'UPDATE sales SET reference = $1 WHERE id = $2 RETURNING *',
-        [`S-${1000 + sale.id}`, sale.id]
-      );
-      sale = updated[0];
-
-      const touchedProducts = [];
       for (const line of lines) {
         await tx.query(
-          `INSERT INTO sale_items (sale_id, product_id, description, quantity, unit_price, line_total)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [sale.id, line.productId, line.description, line.quantity, line.unitPrice, line.lineTotal]
+          `INSERT INTO sale_items (sale_id, product_id, description, quantity, unit_price, unit_cost)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [sale.id, line.productId, line.description, line.quantity, line.unitPrice, line.unitCost]
         );
-        if (line.productId) {
-          await tx.query(
-            'UPDATE products SET stock_quantity = stock_quantity - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-            [line.quantity, line.productId]
-          );
-          touchedProducts.push(line.productId);
-        }
       }
 
-      await checkStockLevels(tx, touchedProducts);
-
-      if (customerId) {
-        const { rows: customer } = await tx.query('SELECT * FROM customers WHERE id = $1', [customerId]);
-        await queueSaleConfirmation(tx, sale, customer[0]);
+      if (amountPaid > 0) {
+        await tx.query('INSERT INTO payments (sale_id, amount, method) VALUES ($1, $2, $3)', [sale.id, amountPaid, method]);
       }
 
+      if (customer) await queueSaleConfirmation(tx, sale, customer);
       return sale.id;
     });
 
@@ -161,42 +151,90 @@ exports.create = async (req, res, next) => {
   }
 };
 
-// Only payment details are editable. Changing the lines of a recorded sale would
-// desynchronise stock; the correct action there is to delete it and re-enter.
+/**
+ * Settling up. Kept compatible with "set the payment status" callers (the
+ * list's Mark paid, the assistant) by translating a status into the payment
+ * that makes it true: paid records the balance, part-paid records `amount`,
+ * refunded records a refund of what was paid, unpaid clears the payments.
+ */
 exports.update = async (req, res, next) => {
   try {
-    await loadSale(req.params.id);
-    const paymentStatus = oneOf(req.body.payment_status, 'Payment status', PAYMENT_STATUSES);
-    const paymentMethod = text(req.body.payment_method, 'Payment method', { max: 40 });
-    const notes = text(req.body.notes, 'Notes', { max: 2000 });
+    const sale = await loadSale(req.params.id);
+    const body = req.body || {};
+    const status = oneOf(body.payment_status, 'Payment status', PAYMENT_STATUSES);
+    const method = paymentMethod(body.payment_method);
+    const notes = text(body.notes, 'Notes', { max: 2000 });
+    const amount = body.amount === undefined || body.amount === null || body.amount === ''
+      ? null
+      : money(number(body.amount, 'Amount', { min: 0.01 }));
+    const balance = money(sale.total - sale.amount_paid);
 
-    await db.query(
-      `UPDATE sales SET payment_status = COALESCE($1, payment_status),
-         payment_method = COALESCE($2, payment_method), notes = COALESCE($3, notes)
-       WHERE id = $4`,
-      [paymentStatus, paymentMethod, notes, req.params.id]
-    );
+    await db.transaction(async (tx) => {
+      if (notes !== null) await tx.query('UPDATE sales SET notes = $1 WHERE id = $2', [notes, sale.id]);
+
+      const useMethod = method || sale.payment_method || 'cash';
+      if (status === 'paid') {
+        if (balance > 0) {
+          await tx.query('INSERT INTO payments (sale_id, amount, method) VALUES ($1, $2, $3)', [sale.id, balance, useMethod]);
+        } else if (sale.payment_status !== 'paid') {
+          await tx.query("UPDATE sales SET payment_status = 'paid' WHERE id = $1 AND total = amount_paid", [sale.id]);
+        }
+      } else if (status === 'partial') {
+        if (amount === null) throw fail('Enter how much was paid');
+        if (amount > balance) throw fail(`Only ${balance.toFixed(2)} is still owed on ${sale.reference}`);
+        await tx.query('INSERT INTO payments (sale_id, amount, method) VALUES ($1, $2, $3)', [sale.id, amount, useMethod]);
+      } else if (status === 'refunded') {
+        const refund = amount ?? money(sale.amount_paid);
+        if (!(sale.amount_paid > 0)) throw fail(`Nothing has been paid on ${sale.reference}, so there is nothing to refund`);
+        if (refund > sale.amount_paid) throw fail(`Only ${Number(sale.amount_paid).toFixed(2)} was paid on ${sale.reference}`);
+        await tx.query('INSERT INTO payments (sale_id, amount, method, note) VALUES ($1, $2, $3, $4)', [sale.id, -refund, useMethod, 'Refund']);
+      } else if (status === 'unpaid') {
+        const { rowCount } = await tx.query('DELETE FROM payments WHERE sale_id = $1', [sale.id]);
+        // A sale with no payment rows (e.g. imported as part-paid) is set directly.
+        if (!rowCount) await tx.query("UPDATE sales SET payment_status = 'unpaid' WHERE id = $1", [sale.id]);
+      } else if (method) {
+        await tx.query('UPDATE sales SET payment_method = $1 WHERE id = $2', [method, sale.id]);
+      }
+    });
+
     res.json(await loadSale(req.params.id));
   } catch (err) {
     next(err);
   }
 };
 
-// Deleting a sale returns its stock, otherwise the numbers stop matching reality.
+/** Records one payment (or a refund, with a negative amount) against a sale. */
+exports.addPayment = async (req, res, next) => {
+  try {
+    const sale = await loadSale(req.params.id);
+    const amount = money(number(req.body?.amount, 'Amount', { required: true }));
+    if (amount === 0) throw fail('Enter an amount');
+    const method = paymentMethod(req.body?.method, 'Payment method', { fallback: sale.payment_method || 'cash' });
+    const note = text(req.body?.note, 'Note', { max: 250 });
+    await db.query('INSERT INTO payments (sale_id, amount, method, note) VALUES ($1, $2, $3, $4)', [sale.id, amount, method, note]);
+    res.status(201).json(await loadSale(sale.id));
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.removePayment = async (req, res, next) => {
+  try {
+    const sale = await loadSale(req.params.id);
+    const { rowCount } = await db.query('DELETE FROM payments WHERE id = $1 AND sale_id = $2', [req.params.paymentId, sale.id]);
+    if (!rowCount) throw fail('Payment not found', 404);
+    res.json(await loadSale(sale.id));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Deleting a sale returns its stock - the database does it as the lines go.
 exports.remove = async (req, res, next) => {
   try {
     const sale = await loadSale(req.params.id);
-    await db.transaction(async (tx) => {
-      for (const item of sale.items) {
-        if (!item.product_id) continue;
-        await tx.query('UPDATE products SET stock_quantity = stock_quantity + $1 WHERE id = $2', [
-          item.quantity,
-          item.product_id,
-        ]);
-      }
-      await tx.query('DELETE FROM sales WHERE id = $1', [sale.id]);
-    });
-    res.json({ ok: true, stockRestored: true });
+    await db.query('DELETE FROM sales WHERE id = $1', [sale.id]);
+    res.json({ ok: true, stockRestored: sale.items.some((i) => i.product_id) });
   } catch (err) {
     next(err);
   }
@@ -236,10 +274,14 @@ async function buildReceipt(saleId) {
     totals: {
       subtotal: Number(sale.subtotal),
       discount: Number(sale.discount),
+      taxRate: Number(sale.tax_rate),
       tax: Number(sale.tax),
       total: Number(sale.total),
+      paid: Number(sale.amount_paid),
+      balance: Number(sale.balance_due),
     },
     payment: { status: sale.payment_status, method: sale.payment_method },
+    payments: sale.payments.map((p) => ({ amount: Number(p.amount), method: p.method, kind: p.kind, paidAt: p.paid_at })),
     notes: sale.notes,
   };
 }

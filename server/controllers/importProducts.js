@@ -2,7 +2,7 @@ const fs = require('fs');
 const db = require('../db');
 const { fail, text, number, money } = require('../lib/validate');
 const { deleteStored } = require('../lib/storage');
-const { checkStockLevels } = require('../lib/messaging');
+const { categoryIdFor } = require('../lib/categories');
 
 /**
  * Minimal RFC 4180 parser. Written rather than pulled in because the whole job
@@ -140,8 +140,8 @@ async function readUpload(req) {
         unit: text(read('unit'), `Row ${lineNumber}: unit`, { max: 40 }) || 'unit',
         cost_price: money(number(read('cost_price'), `Row ${lineNumber}: cost price`, { min: 0, fallback: 0 })),
         sale_price: money(number(read('sale_price'), `Row ${lineNumber}: sale price`, { min: 0, fallback: 0 })),
-        stock_quantity: number(read('stock_quantity'), `Row ${lineNumber}: stock`, { integer: true, fallback: 0 }),
-        reorder_level: number(read('reorder_level'), `Row ${lineNumber}: reorder level`, { min: 0, integer: true, fallback: 0 }),
+        stock_quantity: number(read('stock_quantity'), `Row ${lineNumber}: stock`, { min: 0, fallback: 0, decimals: 3 }),
+        reorder_level: number(read('reorder_level'), `Row ${lineNumber}: reorder level`, { min: 0, fallback: 0, decimals: 3 }),
       };
       items.push({ line: lineNumber, item });
     } catch (err) {
@@ -172,40 +172,38 @@ exports.commit = async (req, res, next) => {
     if (!parsed.items.length) throw fail('There were no usable rows to import.');
 
     const result = await db.transaction(async (tx) => {
+      // Stock set by an import shows in the ledger as an import, not a correction.
+      await tx.query("SELECT set_config('docdesk.stock_kind', 'import', true), set_config('docdesk.stock_note', 'Imported from a spreadsheet', true)");
       let created = 0;
       let updated = 0;
-      const touched = [];
 
       for (const item of parsed.items) {
         let existingId = null;
         if (item.sku) {
-          const { rows } = await tx.query('SELECT id FROM products WHERE sku = $1', [item.sku]);
+          const { rows } = await tx.query('SELECT id FROM products WHERE lower(sku) = lower($1)', [item.sku]);
           existingId = rows[0]?.id ?? null;
         }
+        const categoryId = await categoryIdFor(item.category);
 
         if (existingId) {
           await tx.query(
-            `UPDATE products SET name=$1, category=$2, unit=$3, cost_price=$4,
-               sale_price=$5, stock_quantity=$6, reorder_level=$7, updated_at=CURRENT_TIMESTAMP
-             WHERE id=$8`,
-            [item.name, item.category, item.unit, item.cost_price, item.sale_price,
+            `UPDATE products SET name = $1, category_id = $2, unit = $3, cost_price = $4,
+               sale_price = $5, stock_quantity = $6, reorder_level = $7
+             WHERE id = $8`,
+            [item.name, categoryId, item.unit, item.cost_price, item.sale_price,
              item.stock_quantity, item.reorder_level, existingId]
           );
-          touched.push(existingId);
           updated++;
         } else {
-          const { rows } = await tx.query(
-            `INSERT INTO products (name, sku, category, unit, cost_price, sale_price, stock_quantity, reorder_level)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-            [item.name, item.sku, item.category, item.unit, item.cost_price,
+          await tx.query(
+            `INSERT INTO products (name, sku, category_id, unit, cost_price, sale_price, stock_quantity, reorder_level)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [item.name, item.sku, categoryId, item.unit, item.cost_price,
              item.sale_price, item.stock_quantity, item.reorder_level]
           );
-          touched.push(rows[0].id);
           created++;
         }
       }
-
-      await checkStockLevels(tx, touched);
       return { created, updated };
     });
 

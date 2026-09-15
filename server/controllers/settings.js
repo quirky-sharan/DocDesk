@@ -1,5 +1,6 @@
 const db = require('../db');
 const { text, number, fail } = require('../lib/validate');
+const { knownZones } = require('../lib/timezone');
 
 // Whitelisted so an arbitrary key can't be written, and so defaults exist
 // before anyone has saved anything.
@@ -15,6 +16,15 @@ const SETTINGS = {
     parse: (v) => String(number(v, 'Default tax %', { min: 0, max: 100, fallback: 0 })),
   },
   receipt_footer: { label: 'Receipt footer', default: '', parse: (v) => text(v, 'Receipt footer', { max: 300 }) },
+  timezone: {
+    label: 'Timezone',
+    default: '',
+    parse: async (v) => {
+      const zone = text(v, 'Timezone', { max: 60 });
+      if (zone && !(await knownZones()).has(zone)) throw fail(`"${zone}" is not a timezone name, e.g. Asia/Kolkata`);
+      return zone;
+    },
+  },
 };
 
 async function readAll() {
@@ -44,18 +54,19 @@ exports.update = async (req, res, next) => {
     const unknown = Object.keys(incoming).filter((k) => !SETTINGS[k]);
     if (unknown.length) throw fail(`Unknown setting: ${unknown.join(', ')}`);
 
+    const parsed = {};
+    for (const [key, raw] of Object.entries(incoming)) {
+      parsed[key] = (await SETTINGS[key].parse(raw)) ?? '';
+    }
+
     await db.transaction(async (tx) => {
-      for (const [key, raw] of Object.entries(incoming)) {
-        const value = SETTINGS[key].parse(raw) ?? '';
-        // Upsert by hand so both drivers behave the same; ON CONFLICT syntax
-        // differs enough between them to be worth avoiding.
-        const { rowCount } = await tx.query(
-          'UPDATE settings SET value = $1, updated_at = CURRENT_TIMESTAMP WHERE key = $2',
-          [value, key]
+      for (const [key, value] of Object.entries(parsed)) {
+        await tx.query(
+          `INSERT INTO settings (key, value) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+           WHERE settings.value IS DISTINCT FROM EXCLUDED.value`,
+          [key, value]
         );
-        if (!rowCount) {
-          await tx.query('INSERT INTO settings (key, value) VALUES ($1, $2)', [key, value]);
-        }
       }
     });
 

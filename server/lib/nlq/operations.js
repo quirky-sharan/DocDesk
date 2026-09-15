@@ -1,4 +1,4 @@
-const { assertTable, describeTable, badRequest } = require('../tables');
+const { assertTable, describeTable, listColumns, badRequest } = require('../tables');
 
 /**
  * The vocabulary of things a natural-language request is allowed to become.
@@ -80,20 +80,40 @@ const OPERATORS = {
   is_not_empty: 'IS NOT NULL',
 };
 
-// Portable column types. Both drivers accept these spellings.
+// The column types a person can ask for, as PostgreSQL types.
 const COLUMN_TYPES = {
-  text: { sqlite: 'TEXT', postgres: 'TEXT' },
-  number: { sqlite: 'REAL', postgres: 'NUMERIC(14,2)' },
-  integer: { sqlite: 'INTEGER', postgres: 'INTEGER' },
-  date: { sqlite: 'TEXT', postgres: 'DATE' },
-  boolean: { sqlite: 'INTEGER', postgres: 'BOOLEAN' },
+  text: 'text',
+  number: 'numeric(14,2)',
+  integer: 'integer',
+  date: 'date',
+  boolean: 'boolean',
 };
 
 const AGGREGATES = { count: 'COUNT', sum: 'SUM', avg: 'AVG', min: 'MIN', max: 'MAX' };
 
-// Columns the app's own logic depends on. The model may read them but must not
-// rename, drop or overwrite them, or the rest of DocDesk stops working.
-const PROTECTED_COLUMNS = new Set(['id', 'created_at', 'updated_at', 'reference', 'sale_id', 'purchase_order_id']);
+// Columns the app's own logic or the database's rules depend on. They can be
+// read, but not overwritten in bulk - money totals and payment status follow
+// from their lines and payments, keys hold records together.
+const PROTECTED_COLUMNS = new Set([
+  'id', 'created_at', 'updated_at', 'row_version', 'reference', 'sale_id', 'purchase_order_id', 'product_id',
+  'category_id', 'supplier_id', 'customer_id', 'subtotal', 'discount', 'tax', 'tax_rate', 'total', 'amount_paid',
+  'payment_status', 'line_total', 'quantity_received', 'stored_name', 'kind',
+]);
+
+// The columns DocDesk itself is built on (db/migrations/002_tables.sql). Only
+// columns someone added can be renamed or deleted - removing "phone" would
+// break every form that saves one.
+const BASE_COLUMNS = {
+  products: ['id', 'sku', 'name', 'description', 'category_id', 'unit', 'cost_price', 'sale_price', 'stock_quantity', 'reorder_level', 'supplier_id', 'is_active', 'created_at', 'updated_at', 'row_version'],
+  customers: ['id', 'name', 'phone', 'email', 'address', 'notes', 'created_at', 'updated_at', 'row_version'],
+  suppliers: ['id', 'name', 'contact_name', 'phone', 'email', 'address', 'notes', 'created_at', 'updated_at', 'row_version'],
+  sales: ['id', 'reference', 'customer_id', 'subtotal', 'discount', 'tax_rate', 'tax', 'total', 'amount_paid', 'payment_status', 'payment_method', 'notes', 'created_at', 'updated_at'],
+  purchase_orders: ['id', 'reference', 'supplier_id', 'status', 'expected_date', 'received_date', 'total', 'notes', 'created_at', 'updated_at'],
+  sale_items: ['id', 'sale_id', 'product_id', 'description', 'quantity', 'unit_price', 'unit_cost', 'line_total'],
+  purchase_order_items: ['id', 'purchase_order_id', 'product_id', 'description', 'quantity', 'quantity_received', 'unit_cost', 'line_total'],
+  message_log: ['id', 'channel', 'recipient', 'subject', 'body', 'trigger_type', 'status', 'related_type', 'related_id', 'error', 'created_at', 'sent_at'],
+  files: ['id', 'stored_name', 'original_name', 'mime_type', 'size_bytes', 'description', 'related_type', 'related_id', 'created_at'],
+};
 
 function normaliseColumnName(raw) {
   const name = String(raw || '')
@@ -113,13 +133,19 @@ async function columnNames(table) {
   return (await describeTable(table)).map((c) => c.name);
 }
 
-async function assertExisting(table, column, label = 'column') {
-  const names = await columnNames(table);
+/**
+ * Finds a column by name. Reads (sort, filter, summarise) may also use the
+ * joined display columns such as a product's category; changes may only name
+ * real columns.
+ */
+async function assertExisting(table, column, label = 'column', { virtual = false } = {}) {
+  const columns = virtual ? await listColumns(table) : await describeTable(table);
+  const names = columns.filter((c) => c.name !== 'row_version').map((c) => c.name);
   const wanted = String(column || '').trim().toLowerCase();
   const match = names.find((n) => n.toLowerCase() === wanted);
   if (!match) {
     throw badRequest(
-      `There is no ${label} called "${column}". Available: ${names.filter((n) => !n.startsWith('_')).join(', ')}`
+      `There is no ${label} called "${column}". Available: ${names.filter((n) => !n.startsWith('_') && !n.endsWith('_id')).join(', ')}`
     );
   }
   return match;
@@ -131,10 +157,17 @@ function assertUnprotected(column, verb) {
   }
 }
 
+function assertCustomColumn(table, column, verb) {
+  assertUnprotected(column, verb);
+  if ((BASE_COLUMNS[table] || []).includes(column)) {
+    throw badRequest(`"${column}" is one of DocDesk's own columns, so it can't be ${verb}. Only columns you added can be.`);
+  }
+}
+
 async function validateConditions(table, rawConditions) {
   const conditions = [];
   for (const raw of rawConditions || []) {
-    const column = await assertExisting(table, raw.column);
+    const column = await assertExisting(table, raw.column, 'column', { virtual: true });
     const operator = String(raw.operator || '=').toLowerCase();
     if (!OPERATORS[operator]) {
       throw badRequest(`"${raw.operator}" isn't a comparison I understand.`);
@@ -194,13 +227,13 @@ async function validateOperation(table, raw) {
 
   switch (type) {
     case 'sort': {
-      const column = await assertExisting(table, raw.column);
-      const meta = (await describeTable(table)).find((c) => c.name === column);
+      const column = await assertExisting(table, raw.column, 'column', { virtual: true });
+      const meta = (await listColumns(table)).find((c) => c.name === column);
       return {
         type,
         column,
         direction: String(raw.direction || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc',
-        isText: /char|text|clob/i.test(meta?.type || ''),
+        isText: /char|text/i.test(meta?.type || ''),
       };
     }
 
@@ -212,7 +245,7 @@ async function validateOperation(table, raw) {
 
     case 'add_column': {
       const name = normaliseColumnName(raw.name);
-      const existing = await columnNames(table);
+      const existing = (await listColumns(table)).map((c) => c.name);
       if (existing.some((n) => n.toLowerCase() === name)) {
         throw badRequest(`There is already a column called "${name}".`);
       }
@@ -225,7 +258,7 @@ async function validateOperation(table, raw) {
 
     case 'rename_column': {
       const from = await assertExisting(table, raw.from);
-      assertUnprotected(from, 'renamed');
+      assertCustomColumn(table, from, 'renamed');
       const to = normaliseColumnName(raw.to);
       const existing = await columnNames(table);
       if (existing.some((n) => n.toLowerCase() === to)) {
@@ -236,7 +269,7 @@ async function validateOperation(table, raw) {
 
     case 'drop_column': {
       const name = await assertExisting(table, raw.name);
-      assertUnprotected(name, 'deleted');
+      assertCustomColumn(table, name, 'deleted');
       return { type, name };
     }
 
@@ -258,14 +291,14 @@ async function validateOperation(table, raw) {
         if (!AGGREGATES[fn]) throw badRequest(`"${metric.fn}" isn't a summary I can calculate.`);
         const column = metric.column === '*' || fn === 'count' && !metric.column
           ? '*'
-          : await assertExisting(table, metric.column);
+          : await assertExisting(table, metric.column, 'column', { virtual: true });
         metrics.push({ fn, column });
       }
       if (!metrics.length) metrics.push({ fn: 'count', column: '*' });
       return {
         type,
         metrics,
-        groupBy: raw.group_by || raw.groupBy ? await assertExisting(table, raw.group_by || raw.groupBy) : null,
+        groupBy: raw.group_by || raw.groupBy ? await assertExisting(table, raw.group_by || raw.groupBy, 'column', { virtual: true }) : null,
       };
     }
 
@@ -287,6 +320,6 @@ function changesSchema(op) {
 }
 
 module.exports = {
-  OPERATIONS, OPERATORS, COLUMN_TYPES, AGGREGATES, PROTECTED_COLUMNS,
+  OPERATIONS, OPERATORS, COLUMN_TYPES, AGGREGATES, PROTECTED_COLUMNS, BASE_COLUMNS,
   validateOperation, normaliseShape, describe, isDestructive, changesSchema, normaliseColumnName,
 };

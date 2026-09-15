@@ -1,15 +1,15 @@
 const db = require('../db');
 const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, number, oneOf, id, money } = require('../lib/validate');
-const { checkStockLevels } = require('../lib/messaging');
+const { lineTotalCents, fromCents } = require('../lib/money');
 
 const STATUSES = ['draft', 'ordered', 'partial', 'received', 'cancelled'];
 
 async function loadOrder(orderId, runner = db) {
   const { rows } = await runner.query(
     `SELECT po.*, s.name AS supplier_name
-     FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id
-     WHERE po.id = $1`,
+       FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id
+      WHERE po.id = $1`,
     [orderId]
   );
   if (!rows.length) throw fail('Purchase order not found', 404);
@@ -22,13 +22,11 @@ async function loadOrder(orderId, runner = db) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { status } = req.query;
-    res.json(
-      await listRows('purchase_orders', {
-        ...readListQuery(req.query),
-        where: status ? { status } : {},
-      })
-    );
+    const { status, supplier_id } = req.query;
+    const where = {};
+    if (status) where.status = status;
+    if (supplier_id) where.supplier_id = supplier_id;
+    res.json(await listRows('purchase_orders', { ...readListQuery(req.query), where }));
   } catch (err) {
     next(err);
   }
@@ -42,8 +40,15 @@ exports.get = async (req, res, next) => {
   }
 };
 
+function parseDate(value, label) {
+  const raw = text(value, label, { max: 40 });
+  if (!raw) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(Date.parse(raw))) throw fail(`${label} must be a date like 2026-09-30`);
+  return raw;
+}
+
 // Creating an order does not move stock. Stock only changes when the goods are
-// actually marked as received, which is what `receive` below does.
+// actually marked as received.
 exports.create = async (req, res, next) => {
   try {
     const body = req.body || {};
@@ -51,8 +56,8 @@ exports.create = async (req, res, next) => {
     if (!rawItems.length) throw fail('Add at least one item to the order');
 
     const supplierId = id(body.supplier_id, 'Supplier');
-    const status = oneOf(body.status, 'Status', STATUSES, { fallback: 'draft' });
-    const expectedDate = text(body.expected_date, 'Expected date', { max: 40 });
+    const status = oneOf(body.status, 'Status', ['draft', 'ordered'], { fallback: 'draft' });
+    const expectedDate = parseDate(body.expected_date, 'Expected date');
     const notes = text(body.notes, 'Notes', { max: 2000 });
 
     const newOrderId = await db.transaction(async (tx) => {
@@ -64,55 +69,41 @@ exports.create = async (req, res, next) => {
       const lines = [];
       for (const [index, raw] of rawItems.entries()) {
         const position = `Item ${index + 1}`;
-        const quantity = number(raw.quantity, `${position} quantity`, { required: true, min: 0.001 });
+        const quantity = number(raw.quantity, `${position} quantity`, { required: true, min: 0.001, decimals: 3 });
         const productId = id(raw.product_id, `${position} product`);
         let description = text(raw.description, `${position} description`, { max: 250 });
         let unitCost = raw.unit_cost;
 
         if (productId) {
-          const { rows } = await tx.query('SELECT * FROM products WHERE id = $1', [productId]);
+          const { rows } = await tx.query('SELECT id, name, cost_price FROM products WHERE id = $1', [productId]);
           const product = rows[0];
           if (!product) throw fail(`${position}: that product no longer exists`, 404);
           description = description || product.name;
-          if (unitCost === undefined || unitCost === null || unitCost === '') {
-            unitCost = product.cost_price;
-          }
+          if (unitCost === undefined || unitCost === null || unitCost === '') unitCost = product.cost_price;
         } else if (!description) {
           throw fail(`${position} needs either a product or a description`);
         }
 
-        lines.push({
-          productId,
-          description,
-          quantity,
-          unitCost: money(number(unitCost, `${position} cost`, { min: 0, fallback: 0 })),
-        });
+        const cost = money(number(unitCost, `${position} cost`, { min: 0, fallback: 0 }));
+        lines.push({ productId, description, quantity, unitCost: cost, cents: lineTotalCents(quantity, cost) });
       }
 
-      const total = money(lines.reduce((sum, l) => sum + l.quantity * l.unitCost, 0));
-
+      const total = fromCents(lines.reduce((sum, l) => sum + l.cents, 0n));
       const { rows: orderRows } = await tx.query(
         `INSERT INTO purchase_orders (supplier_id, status, expected_date, total, notes)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
         [supplierId, status, expectedDate, total, notes]
       );
-      let order = orderRows[0];
-
-      const { rows: updated } = await tx.query(
-        'UPDATE purchase_orders SET reference = $1 WHERE id = $2 RETURNING *',
-        [`PO-${1000 + order.id}`, order.id]
-      );
-      order = updated[0];
+      const orderId = orderRows[0].id;
 
       for (const line of lines) {
         await tx.query(
           `INSERT INTO purchase_order_items (purchase_order_id, product_id, description, quantity, unit_cost)
-           VALUES ($1,$2,$3,$4,$5)`,
-          [order.id, line.productId, line.description, line.quantity, line.unitCost]
+           VALUES ($1, $2, $3, $4, $5)`,
+          [orderId, line.productId, line.description, line.quantity, line.unitCost]
         );
       }
-
-      return order.id;
+      return orderId;
     });
 
     res.status(201).json(await loadOrder(newOrderId));
@@ -123,29 +114,40 @@ exports.create = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    await loadOrder(req.params.id);
-    const status = oneOf(req.body.status, 'Status', STATUSES);
-    const expectedDate = text(req.body.expected_date, 'Expected date', { max: 40 });
-    const notes = text(req.body.notes, 'Notes', { max: 2000 });
+    const order = await loadOrder(req.params.id);
+    const body = req.body || {};
+    const status = oneOf(body.status, 'Status', STATUSES);
+    const expectedDate = body.expected_date === undefined ? undefined : parseDate(body.expected_date, 'Expected date');
+    const notes = text(body.notes, 'Notes', { max: 2000 });
+
+    // Received and part-received are facts about deliveries, set by receiving -
+    // not something to pick from a menu.
+    if (status && ['partial', 'received'].includes(status) && status !== order.status) {
+      throw fail('Mark goods as received to change that - the status follows what has actually arrived');
+    }
+    if (status === 'cancelled' && order.status === 'received') {
+      throw fail('This order has already been fully received, so it cannot be cancelled');
+    }
 
     await db.query(
-      `UPDATE purchase_orders SET status = COALESCE($1, status),
-         expected_date = COALESCE($2, expected_date), notes = COALESCE($3, notes)
-       WHERE id = $4`,
-      [status, expectedDate, notes, req.params.id]
+      `UPDATE purchase_orders
+          SET status = COALESCE($1, status),
+              expected_date = CASE WHEN $2::boolean THEN $3::date ELSE expected_date END,
+              notes = COALESCE($4, notes)
+        WHERE id = $5`,
+      [status, expectedDate !== undefined, expectedDate ?? null, notes, order.id]
     );
-    res.json(await loadOrder(req.params.id));
+    res.json(await loadOrder(order.id));
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Marks quantities as delivered and adds them to stock.
- *
- * Accepts a partial delivery: the body may name only some lines, and a quantity
- * smaller than ordered. Receiving is incremental, so calling this twice for the
- * same line adds to what was already received rather than replacing it.
+ * Books a delivery in. Accepts a partial delivery: the body may name only some
+ * lines, and a quantity smaller than ordered. Receiving adds to what arrived
+ * before. The database moves the stock, writes the ledger and works out the
+ * order's status from what has arrived.
  */
 exports.receive = async (req, res, next) => {
   try {
@@ -155,9 +157,8 @@ exports.receive = async (req, res, next) => {
 
     const requested = Array.isArray(req.body?.items) ? req.body.items : null;
 
-    const updatedId = await db.transaction(async (tx) => {
-      const touchedProducts = [];
-
+    await db.transaction(async (tx) => {
+      let received = 0;
       for (const item of order.items) {
         const outstanding = Number(item.quantity) - Number(item.quantity_received);
         if (outstanding <= 0) continue;
@@ -165,13 +166,12 @@ exports.receive = async (req, res, next) => {
         // No explicit list means "receive everything still outstanding".
         let receiving = outstanding;
         if (requested) {
-          const match = requested.find((r) => Number(r.id) === item.id);
+          const match = requested.find((r) => Number(r.id) === Number(item.id));
           if (!match) continue;
-          receiving = number(match.quantity, `Item ${item.id} quantity`, { required: true, min: 0.001 });
+          receiving = number(match.quantity, `${item.description} quantity`, { required: true, min: 0, decimals: 3 });
+          if (receiving === 0) continue;
           if (receiving > outstanding) {
-            throw fail(
-              `Cannot receive ${receiving} of ${item.description}. Only ${outstanding} are still outstanding.`
-            );
+            throw fail(`Cannot receive ${receiving} of ${item.description}. Only ${outstanding} are still outstanding.`);
           }
         }
 
@@ -179,50 +179,12 @@ exports.receive = async (req, res, next) => {
           'UPDATE purchase_order_items SET quantity_received = quantity_received + $1 WHERE id = $2',
           [receiving, item.id]
         );
-
-        if (item.product_id) {
-          await tx.query(
-            'UPDATE products SET stock_quantity = stock_quantity + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-            [receiving, item.product_id]
-          );
-          touchedProducts.push(item.product_id);
-        }
+        received += 1;
       }
-
-      // Status is derived from what actually arrived rather than set by hand.
-      const { rows: after } = await tx.query(
-        'SELECT quantity, quantity_received FROM purchase_order_items WHERE purchase_order_id = $1',
-        [order.id]
-      );
-      const fullyReceived = after.every((i) => Number(i.quantity_received) >= Number(i.quantity));
-      const anyReceived = after.some((i) => Number(i.quantity_received) > 0);
-      const status = fullyReceived ? 'received' : anyReceived ? 'partial' : order.status;
-
-      await tx.query(
-        'UPDATE purchase_orders SET status = $1, received_date = $2 WHERE id = $3',
-        [status, fullyReceived ? new Date().toISOString().slice(0, 10) : null, order.id]
-      );
-
-      // Restocking can lift a product back above its reorder level, which
-      // clears any alert that was queued for it.
-      if (touchedProducts.length) {
-        const placeholders = touchedProducts.map((_, i) => `$${i + 1}`).join(',');
-        await tx.query(
-          `DELETE FROM message_log
-           WHERE trigger_type = 'low_stock' AND status = 'queued' AND related_type = 'product'
-             AND related_id IN (${placeholders})
-             AND related_id IN (
-               SELECT id FROM products WHERE reorder_level <= 0 OR stock_quantity > reorder_level
-             )`,
-          touchedProducts
-        );
-        await checkStockLevels(tx, touchedProducts);
-      }
-
-      return order.id;
+      if (!received) throw fail('Enter how many of at least one item arrived');
     });
 
-    res.json(await loadOrder(updatedId));
+    res.json(await loadOrder(order.id));
   } catch (err) {
     next(err);
   }
@@ -243,3 +205,5 @@ exports.remove = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.loadOrder = loadOrder;

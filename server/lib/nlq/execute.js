@@ -1,6 +1,6 @@
 const db = require('../../db');
-const { listRows, invalidateSchemaCache, badRequest } = require('../tables');
-const { OPERATORS, COLUMN_TYPES, AGGREGATES, describe, changesSchema } = require('./operations');
+const { TABLES, listRows, invalidateSchemaCache, badRequest, escapeLike } = require('../tables');
+const { OPERATORS, COLUMN_TYPES, AGGREGATES, describe } = require('./operations');
 
 /**
  * Builds SQL from an already-validated operation.
@@ -10,31 +10,56 @@ const { OPERATORS, COLUMN_TYPES, AGGREGATES, describe, changesSchema } = require
  * constructed from raw model output.
  */
 
-function buildWhere(conditions, match = 'all', params = []) {
+/** The FROM clause with the table's joins, and a resolver for column expressions. */
+function source(table) {
+  const config = TABLES[table];
+  const joins = (config.joins || []).map((j) => ` LEFT JOIN ${j.table} ${j.alias} ON ${j.on}`).join('');
+  const virtual = {};
+  for (const join of config.joins || []) Object.assign(virtual, join.columns);
+  Object.assign(virtual, config.computed || {});
+  const select = [
+    't.*',
+    ...Object.entries(virtual).map(([alias, expression]) => `${expression} AS ${alias}`),
+  ].join(', ');
+  return {
+    from: `${table} t${joins}`,
+    select,
+    column: (name) => virtual[name] || `t.${name}`,
+  };
+}
+
+function buildWhere(table, conditions, match = 'all', params = []) {
   if (!conditions?.length) return { sql: '', params };
+  const { column } = source(table);
   const parts = conditions.map((c) => {
+    const expression = column(c.column);
     const operator = OPERATORS[c.operator];
-    if (c.operator === 'is_empty') return `(t.${c.column} IS NULL OR t.${c.column} = '')`;
-    if (c.operator === 'is_not_empty') return `(t.${c.column} IS NOT NULL AND t.${c.column} <> '')`;
+    if (c.operator === 'is_empty') return `(${expression} IS NULL OR ${expression}::text = '')`;
+    if (c.operator === 'is_not_empty') return `(${expression} IS NOT NULL AND ${expression}::text <> '')`;
     if (c.operator === 'contains') {
-      params.push(`%${String(c.value).toLowerCase()}%`);
-      return `LOWER(COALESCE(t.${c.column}, '')) LIKE $${params.length}`;
+      params.push(`%${escapeLike(c.value)}%`);
+      return `${expression}::text ILIKE $${params.length}`;
     }
     if (c.operator === 'starts_with') {
-      params.push(`${String(c.value).toLowerCase()}%`);
-      return `LOWER(COALESCE(t.${c.column}, '')) LIKE $${params.length}`;
+      params.push(`${escapeLike(c.value)}%`);
+      return `${expression}::text ILIKE $${params.length}`;
     }
     params.push(c.value);
-    return `t.${c.column} ${operator} $${params.length}`;
+    // Text compares without regard to letter case, the way people mean it.
+    if (typeof c.value === 'string' && (c.operator === '=' || c.operator === '!=') && Number.isNaN(Number(c.value))) {
+      return `lower(${expression}::text) ${operator} lower($${params.length})`;
+    }
+    return `${expression} ${operator} $${params.length}`;
   });
   return { sql: ` WHERE ${parts.join(match === 'any' ? ' OR ' : ' AND ')}`, params };
 }
 
 /**
- * Runs the operation without changing anything, so the user can see what it
+ * Runs the operation without changing anything, so the person can see what it
  * would do before agreeing to it.
  */
 async function preview(table, op) {
+  const { from, select, column } = source(table);
   switch (op.type) {
     case 'sort': {
       const result = await listRows(table, { sort: op.column, dir: op.direction, pageSize: 8 });
@@ -43,46 +68,37 @@ async function preview(table, op) {
 
     case 'filter': {
       const params = [];
-      const where = buildWhere(op.conditions, op.match, params);
-      const { rows } = await db.query(
-        `SELECT * FROM ${table} t${where.sql} LIMIT 8`,
-        params
-      );
-      const { rows: counted } = await db.query(
-        `SELECT COUNT(*) AS count FROM ${table} t${where.sql}`,
-        params
-      );
-      return { kind: 'rows', rows, total: Number(counted[0].count) };
+      const where = buildWhere(table, op.conditions, op.match, params);
+      const { rows } = await db.query(`SELECT ${select}, count(*) OVER () AS __total FROM ${from}${where.sql} LIMIT 8`, params);
+      const total = rows.length ? Number(rows[0].__total) : 0;
+      for (const row of rows) delete row.__total;
+      return { kind: 'rows', rows, total };
     }
 
     case 'summarize': {
-      const select = op.metrics
-        .map((m) => `${AGGREGATES[m.fn]}(${m.column === '*' ? '*' : `t.${m.column}`}) AS ${m.fn}_${m.column === '*' ? 'rows' : m.column}`)
+      const metrics = op.metrics
+        .map((m) => `${AGGREGATES[m.fn]}(${m.column === '*' ? '*' : column(m.column)}) AS ${m.fn}_${m.column === '*' ? 'rows' : m.column}`)
         .join(', ');
-      const groupSql = op.groupBy ? ` GROUP BY t.${op.groupBy}` : '';
-      const groupSelect = op.groupBy ? `t.${op.groupBy} AS ${op.groupBy}, ` : '';
-      const { rows } = await db.query(
-        `SELECT ${groupSelect}${select} FROM ${table} t${groupSql} ORDER BY 1 LIMIT 50`
-      );
+      const groupSelect = op.groupBy ? `${column(op.groupBy)} AS ${op.groupBy}, ` : '';
+      const groupSql = op.groupBy ? ` GROUP BY ${column(op.groupBy)}` : '';
+      const { rows } = await db.query(`SELECT ${groupSelect}${metrics} FROM ${from}${groupSql} ORDER BY 1 LIMIT 50`);
       return { kind: 'summary', rows };
     }
 
     case 'set_values': {
       const params = [];
-      const where = buildWhere(op.conditions, 'all', params);
-      const { rows: counted } = await db.query(
-        `SELECT COUNT(*) AS count FROM ${table} t${where.sql}`,
-        params
-      );
-      const { rows } = await db.query(`SELECT * FROM ${table} t${where.sql} LIMIT 8`, params);
-      return { kind: 'rows', rows, total: Number(counted[0].count), affected: Number(counted[0].count) };
+      const where = buildWhere(table, op.conditions, 'all', params);
+      const { rows } = await db.query(`SELECT ${select}, count(*) OVER () AS __total FROM ${from}${where.sql} LIMIT 8`, params);
+      const total = rows.length ? Number(rows[0].__total) : 0;
+      for (const row of rows) delete row.__total;
+      return { kind: 'rows', rows, total, affected: total };
     }
 
     case 'add_column':
     case 'rename_column':
     case 'drop_column': {
-      const { rows: counted } = await db.query(`SELECT COUNT(*) AS count FROM ${table} t`);
-      return { kind: 'schema', total: Number(counted[0].count), affected: Number(counted[0].count) };
+      const { rows } = await db.query(`SELECT count(*) AS count FROM ${table}`);
+      return { kind: 'schema', total: Number(rows[0].count), affected: Number(rows[0].count) };
     }
 
     default:
@@ -93,7 +109,8 @@ async function preview(table, op) {
 /**
  * Applies an operation. Read-only shapes (sort, filter, summarize) are returned
  * for the caller to display rather than written anywhere - they describe a view,
- * not a change.
+ * not a change. Schema changes run in a transaction: PostgreSQL DDL is
+ * transactional, so a failed change leaves the table exactly as it was.
  */
 async function apply(table, op) {
   switch (op.type) {
@@ -103,14 +120,12 @@ async function apply(table, op) {
       return { applied: false, view: op, message: describe(op) };
 
     case 'add_column': {
-      const columnType = COLUMN_TYPES[op.columnType][db.name];
-      await db.query(`ALTER TABLE ${table} ADD COLUMN ${op.name} ${columnType}`);
+      await db.query(`ALTER TABLE ${table} ADD COLUMN ${op.name} ${COLUMN_TYPES[op.columnType]}`);
       invalidateSchemaCache(table);
       return { applied: true, message: `Added the "${op.name}" column.` };
     }
 
     case 'rename_column': {
-      // Supported by SQLite 3.25+ and every Postgres we target.
       await db.query(`ALTER TABLE ${table} RENAME COLUMN ${op.from} TO ${op.to}`);
       invalidateSchemaCache(table);
       return { applied: true, message: `Renamed "${op.from}" to "${op.to}".` };
@@ -128,11 +143,12 @@ async function apply(table, op) {
         params.push(a.value);
         return `${a.column} = $${params.length}`;
       });
-      const where = buildWhere(op.conditions, 'all', params);
-      // buildWhere qualifies columns as t.<col>, which UPDATE ... SET does not
-      // accept in either dialect; the alias is stripped for this statement only.
-      const whereSql = where.sql.replace(/\bt\./g, '');
-      const { rowCount } = await db.query(`UPDATE ${table} SET ${assignments.join(', ')}${whereSql}`, params);
+      // Conditions may mention joined columns (a product's category), so the
+      // rows are chosen by a subquery over the same joined source the preview used.
+      const { from } = source(table);
+      const where = buildWhere(table, op.conditions, 'all', params);
+      const target = where.sql ? ` WHERE id IN (SELECT t.id FROM ${from}${where.sql})` : '';
+      const { rowCount } = await db.query(`UPDATE ${table} SET ${assignments.join(', ')}${target}`, params);
       return { applied: true, affected: rowCount, message: `Updated ${rowCount} row${rowCount === 1 ? '' : 's'}.` };
     }
 

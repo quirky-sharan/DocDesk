@@ -33,7 +33,8 @@ function query(params = {}) {
 async function call(method, path, { body, params } = {}) {
   const response = await fetch(`${baseUrl()}${path}${query(params)}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : {},
+    // Marks the change as the assistant's in the database's audit trail.
+    headers: { 'x-docdesk-actor': 'assistant', ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20000),
   });

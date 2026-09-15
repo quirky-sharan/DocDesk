@@ -1,69 +1,74 @@
 const db = require('../db');
 const { money } = require('../lib/validate');
+const { resolveTimezone, todayIn } = require('../lib/timezone');
 
-// Both drivers understand these, and the created_at format is the same
-// 'YYYY-MM-DD HH:MM:SS' in each, so a plain string prefix is enough to group
-// by day without dialect-specific date functions.
-function dayExpression(column) {
-  return db.name === 'postgres' ? `TO_CHAR(${column}, 'YYYY-MM-DD')` : `SUBSTR(${column}, 1, 10)`;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The reporting window, as calendar dates in the shop's timezone. `days` counts
+ * back from today inclusive; explicit from/to win when given.
+ */
+async function windowFrom(req) {
+  const tz = await resolveTimezone(req);
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 3650);
+  const to = DATE.test(req.query.to || '') ? req.query.to : todayIn(tz);
+  const from = DATE.test(req.query.from || '') ? req.query.from : todayIn(tz, -(days - 1));
+  return { from, to, days, tz };
 }
 
-function windowFrom(query) {
-  const days = Math.min(Math.max(Number(query.days) || 30, 1), 365);
-  const to = query.to || new Date().toISOString().slice(0, 10);
-  const from =
-    query.from ||
-    new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
-  return { from, to, days };
-}
+// Rows between two calendar dates (inclusive) in a timezone.
+const IN_WINDOW = (column) =>
+  `${column} >= ($1::date::timestamp AT TIME ZONE $3) AND ${column} < (($2::date + 1)::timestamp AT TIME ZONE $3)`;
 
 exports.summary = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
-    const bounds = [from, `${to} 23:59:59`];
+    const { from, to, tz } = await windowFrom(req);
+    const bounds = [from, to, tz];
 
-    const { rows: totals } = await db.query(
-      `SELECT COUNT(*) AS sale_count,
-              COALESCE(SUM(total), 0) AS revenue,
-              COALESCE(SUM(tax), 0) AS tax,
-              COALESCE(SUM(discount), 0) AS discount
-       FROM sales WHERE created_at >= $1 AND created_at <= $2`,
-      bounds
-    );
-
-    // Cost is taken from the product's current cost price. It is an estimate:
-    // if a product's cost changed after a sale, history shifts with it. Storing
-    // cost per line at sale time would fix that, and is worth doing if margin
-    // reporting ever becomes load-bearing.
-    const { rows: margin } = await db.query(
-      `SELECT COALESCE(SUM(si.line_total), 0) AS revenue,
-              COALESCE(SUM(si.quantity * COALESCE(p.cost_price, 0)), 0) AS cost
-       FROM sale_items si
-       JOIN sales s ON s.id = si.sale_id
-       LEFT JOIN products p ON p.id = si.product_id
-       WHERE s.created_at >= $1 AND s.created_at <= $2`,
-      bounds
-    );
-
-    const { rows: unpaid } = await db.query(
-      `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
-       FROM sales WHERE payment_status IN ('unpaid', 'partial')`
-    );
+    const [{ rows: totals }, { rows: unpaid }, { rows: previous }] = await Promise.all([
+      db.query(
+        `SELECT count(*) AS sale_count,
+                COALESCE(sum(total), 0) AS revenue,
+                COALESCE(sum(tax), 0) AS tax,
+                COALESCE(sum(discount), 0) AS discount,
+                COALESCE(sum(cost_of_goods), 0) AS cost,
+                COALESCE(sum(gross_profit), 0) AS profit,
+                COALESCE(sum(amount_paid), 0) AS collected
+           FROM v_sales WHERE ${IN_WINDOW('created_at')}`,
+        bounds
+      ),
+      db.query(
+        `SELECT count(*) AS count, COALESCE(sum(total - amount_paid), 0) AS amount
+           FROM sales WHERE payment_status IN ('unpaid', 'partial')`
+      ),
+      // The same length of time immediately before, for "vs previous period".
+      db.query(
+        `SELECT COALESCE(sum(total), 0) AS revenue, count(*) AS sale_count
+           FROM sales
+          WHERE created_at >= (($1::date - ($2::date - $1::date + 1))::timestamp AT TIME ZONE $3)
+            AND created_at < ($1::date::timestamp AT TIME ZONE $3)`,
+        bounds
+      ),
+    ]);
 
     const t = totals[0];
-    const revenue = Number(margin[0].revenue);
-    const cost = Number(margin[0].cost);
-
+    const revenue = Number(t.revenue);
+    const prevRevenue = Number(previous[0].revenue);
     res.json({
       from,
       to,
+      timezone: tz,
       saleCount: Number(t.sale_count),
-      revenue: money(t.revenue),
+      revenue: money(revenue),
       tax: money(t.tax),
       discount: money(t.discount),
-      estimatedCost: money(cost),
-      estimatedProfit: money(revenue - cost),
-      averageSale: Number(t.sale_count) ? money(Number(t.revenue) / Number(t.sale_count)) : 0,
+      estimatedCost: money(t.cost),
+      estimatedProfit: money(t.profit),
+      collected: money(t.collected),
+      marginPercent: revenue > 0 ? Math.round((Number(t.profit) / (revenue - Number(t.tax))) * 1000) / 10 : 0,
+      averageSale: Number(t.sale_count) ? money(revenue / Number(t.sale_count)) : 0,
+      previous: { revenue: money(prevRevenue), saleCount: Number(previous[0].sale_count) },
+      revenueChangePercent: prevRevenue === 0 ? (revenue > 0 ? 100 : 0) : Math.round(((revenue - prevRevenue) / prevRevenue) * 100),
       outstanding: { count: Number(unpaid[0].count), amount: money(unpaid[0].amount) },
     });
   } catch (err) {
@@ -73,28 +78,55 @@ exports.summary = async (req, res, next) => {
 
 exports.salesByDay = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
-    const day = dayExpression('created_at');
-    const { rows } = await db.query(
-      `SELECT ${day} AS day, COUNT(*) AS sale_count, COALESCE(SUM(total), 0) AS revenue
-       FROM sales WHERE created_at >= $1 AND created_at <= $2
-       GROUP BY ${day} ORDER BY day`,
-      [from, `${to} 23:59:59`]
-    );
+    const { from, to, tz } = await windowFrom(req);
+    const { rows } = await db.query('SELECT * FROM report_sales_by_day($1, $2, $3)', [from, to, tz]);
+    res.json({
+      from,
+      to,
+      timezone: tz,
+      series: rows.map((r) => ({
+        day: r.day,
+        saleCount: Number(r.sale_count),
+        revenue: money(r.revenue),
+        profit: money(r.profit),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
 
-    // Fill gaps so a chart of the period doesn't silently skip quiet days.
-    const byDay = new Map(rows.map((r) => [r.day, r]));
-    const series = [];
-    for (let d = new Date(from); d <= new Date(to); d.setDate(d.getDate() + 1)) {
-      const key = d.toISOString().slice(0, 10);
-      const found = byDay.get(key);
-      series.push({
-        day: key,
-        saleCount: found ? Number(found.sale_count) : 0,
-        revenue: found ? money(found.revenue) : 0,
-      });
-    }
-    res.json({ from, to, series });
+// When the shop is busy: every weekday x hour cell, in the shop's timezone.
+exports.heatmap = async (req, res, next) => {
+  try {
+    const { from, to, tz } = await windowFrom({ ...req, query: { days: 90, ...req.query } });
+    const { rows } = await db.query('SELECT * FROM report_sales_heatmap($1, $2, $3)', [from, to, tz]);
+    res.json({
+      from,
+      to,
+      timezone: tz,
+      cells: rows.map((r) => ({ dow: r.dow, hour: r.hour, count: Number(r.sale_count), revenue: money(r.revenue) })),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Average takings per weekday across the window.
+exports.byWeekday = async (req, res, next) => {
+  try {
+    const { from, to, tz } = await windowFrom(req);
+    const { rows } = await db.query(
+      `SELECT extract(isodow FROM day)::int AS isodow,
+              round(avg(revenue), 2) AS avg_revenue,
+              round(avg(sale_count), 1) AS avg_sales,
+              sum(revenue) AS revenue
+         FROM report_sales_by_day($1, $2, $3)
+        GROUP BY 1 ORDER BY 1`,
+      [from, to, tz]
+    );
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    res.json(rows.map((r) => ({ day: names[r.isodow - 1], isodow: r.isodow, averageRevenue: money(r.avg_revenue), averageSales: Number(r.avg_sales), revenue: money(r.revenue) })));
   } catch (err) {
     next(err);
   }
@@ -102,29 +134,29 @@ exports.salesByDay = async (req, res, next) => {
 
 exports.topProducts = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
+    const { from, to, tz } = await windowFrom(req);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
     const { rows } = await db.query(
       `SELECT si.description AS name,
               si.product_id,
-              SUM(si.quantity) AS quantity,
-              SUM(si.line_total) AS revenue
-       FROM sale_items si
-       JOIN sales s ON s.id = si.sale_id
-       WHERE s.created_at >= $1 AND s.created_at <= $2
-       GROUP BY si.description, si.product_id
-       ORDER BY revenue DESC
-       LIMIT $3`,
-      [from, `${to} 23:59:59`, limit]
+              sum(si.quantity) AS quantity,
+              sum(si.line_total) AS revenue,
+              sum(si.line_total - si.quantity * si.unit_cost) AS profit
+         FROM sale_items si
+         JOIN sales s ON s.id = si.sale_id
+        WHERE ${IN_WINDOW('s.created_at')}
+        GROUP BY si.description, si.product_id
+        ORDER BY revenue DESC
+        LIMIT $4`,
+      [from, to, tz, limit]
     );
-    res.json(
-      rows.map((r) => ({
-        name: r.name,
-        productId: r.product_id,
-        quantity: Number(r.quantity),
-        revenue: money(r.revenue),
-      }))
-    );
+    res.json(rows.map((r) => ({
+      name: r.name,
+      productId: r.product_id,
+      quantity: Number(r.quantity),
+      revenue: money(r.revenue),
+      profit: money(r.profit),
+    })));
   } catch (err) {
     next(err);
   }
@@ -132,23 +164,16 @@ exports.topProducts = async (req, res, next) => {
 
 exports.topCustomers = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
+    const { from, to, tz } = await windowFrom(req);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
     const { rows } = await db.query(
-      `SELECT c.id, c.name, COUNT(s.id) AS sale_count, COALESCE(SUM(s.total), 0) AS revenue
-       FROM sales s JOIN customers c ON c.id = s.customer_id
-       WHERE s.created_at >= $1 AND s.created_at <= $2
-       GROUP BY c.id, c.name ORDER BY revenue DESC LIMIT $3`,
-      [from, `${to} 23:59:59`, limit]
+      `SELECT c.id, c.name, count(s.id) AS sale_count, COALESCE(sum(s.total), 0) AS revenue
+         FROM sales s JOIN customers c ON c.id = s.customer_id
+        WHERE ${IN_WINDOW('s.created_at')}
+        GROUP BY c.id, c.name ORDER BY revenue DESC LIMIT $4`,
+      [from, to, tz, limit]
     );
-    res.json(
-      rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        saleCount: Number(r.sale_count),
-        revenue: money(r.revenue),
-      }))
-    );
+    res.json(rows.map((r) => ({ id: r.id, name: r.name, saleCount: Number(r.sale_count), revenue: money(r.revenue) })));
   } catch (err) {
     next(err);
   }
@@ -158,86 +183,97 @@ exports.topCustomers = async (req, res, next) => {
 // gets asked ("what did I buy last time?").
 exports.customerHistory = async (req, res, next) => {
   try {
-    const { rows: customer } = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
-    if (!customer.length) {
+    const { rows: stats } = await db.query('SELECT * FROM v_customer_stats WHERE id = $1', [req.params.id]);
+    if (!stats.length) {
       const err = new Error('Customer not found');
       err.status = 404;
       throw err;
     }
+    const tz = await resolveTimezone(req);
 
-    const { rows: sales } = await db.query(
-      `SELECT id, reference, total, payment_status, created_at
-       FROM sales WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 100`,
-      [req.params.id]
-    );
-    const { rows: totals } = await db.query(
-      `SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS spent
-       FROM sales WHERE customer_id = $1`,
-      [req.params.id]
-    );
-    const { rows: favourites } = await db.query(
-      `SELECT si.description AS name, SUM(si.quantity) AS quantity
-       FROM sale_items si JOIN sales s ON s.id = si.sale_id
-       WHERE s.customer_id = $1
-       GROUP BY si.description ORDER BY quantity DESC LIMIT 5`,
-      [req.params.id]
-    );
+    const [{ rows: customer }, { rows: sales }, { rows: favourites }, { rows: monthly }] = await Promise.all([
+      db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]),
+      db.query(
+        `SELECT id, reference, total, amount_paid, total - amount_paid AS balance_due, payment_status, created_at
+           FROM sales WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 100`,
+        [req.params.id]
+      ),
+      db.query(
+        `SELECT si.description AS name, sum(si.quantity) AS quantity, sum(si.line_total) AS spent
+           FROM sale_items si JOIN sales s ON s.id = si.sale_id
+          WHERE s.customer_id = $1
+          GROUP BY si.description ORDER BY quantity DESC LIMIT 5`,
+        [req.params.id]
+      ),
+      db.query(
+        `SELECT to_char(date_trunc('month', created_at AT TIME ZONE $2), 'YYYY-MM') AS month, sum(total) AS spent
+           FROM sales WHERE customer_id = $1
+          GROUP BY 1 ORDER BY 1 DESC LIMIT 12`,
+        [req.params.id, tz]
+      ),
+    ]);
 
+    const s = stats[0];
     res.json({
       customer: customer[0],
-      saleCount: Number(totals[0].count),
-      totalSpent: money(totals[0].spent),
+      saleCount: Number(s.visits),
+      totalSpent: money(s.lifetime_value),
+      averageSale: money(s.average_sale),
+      outstanding: money(s.outstanding),
+      lastPurchaseAt: s.last_purchase_at,
       sales,
-      favourites: favourites.map((f) => ({ name: f.name, quantity: Number(f.quantity) })),
+      favourites: favourites.map((f) => ({ name: f.name, quantity: Number(f.quantity), spent: money(f.spent) })),
+      monthly: monthly.reverse().map((m) => ({ month: m.month, spent: money(m.spent) })),
     });
   } catch (err) {
     next(err);
   }
 };
 
-// Revenue split by product category, for the breakdown chart. Lines whose
-// product was deleted fall into "Other" rather than vanishing from the total.
+// Revenue split by product category. Lines whose product was deleted fall into
+// "Uncategorised" rather than vanishing from the total.
 exports.byCategory = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
+    const { from, to, tz } = await windowFrom(req);
     const { rows } = await db.query(
-      `SELECT COALESCE(NULLIF(p.category, ''), 'Uncategorised') AS category,
-              SUM(si.line_total) AS revenue,
-              SUM(si.quantity)   AS quantity
-       FROM sale_items si
-       JOIN sales s ON s.id = si.sale_id
-       LEFT JOIN products p ON p.id = si.product_id
-       WHERE s.created_at >= $1 AND s.created_at <= $2
-       GROUP BY COALESCE(NULLIF(p.category, ''), 'Uncategorised')
-       ORDER BY revenue DESC`,
-      [from, `${to} 23:59:59`]
+      `SELECT COALESCE(c.name, 'Uncategorised') AS category,
+              sum(si.line_total) AS revenue,
+              sum(si.quantity) AS quantity,
+              sum(si.line_total - si.quantity * si.unit_cost) AS profit
+         FROM sale_items si
+         JOIN sales s ON s.id = si.sale_id
+         LEFT JOIN products p ON p.id = si.product_id
+         LEFT JOIN categories c ON c.id = p.category_id
+        WHERE ${IN_WINDOW('s.created_at')}
+        GROUP BY 1
+        ORDER BY revenue DESC`,
+      [from, to, tz]
     );
     res.json(rows.map((r) => ({
       category: r.category,
       revenue: money(r.revenue),
       quantity: Number(r.quantity),
+      profit: money(r.profit),
     })));
   } catch (err) {
     next(err);
   }
 };
 
+// How money came in, from the payments themselves (net of refunds).
 exports.byPaymentMethod = async (req, res, next) => {
   try {
-    const { from, to } = windowFrom(req.query);
+    const { from, to, tz } = await windowFrom(req);
     const { rows } = await db.query(
-      `SELECT COALESCE(NULLIF(payment_method, ''), 'Not recorded') AS method,
-              COUNT(*) AS sale_count, SUM(total) AS revenue
-       FROM sales WHERE created_at >= $1 AND created_at <= $2
-       GROUP BY COALESCE(NULLIF(payment_method, ''), 'Not recorded')
-       ORDER BY revenue DESC`,
-      [from, `${to} 23:59:59`]
+      `SELECT p.method, count(DISTINCT p.sale_id) AS sale_count, sum(p.amount) AS revenue
+         FROM payments p
+        WHERE ${IN_WINDOW('p.paid_at')}
+        GROUP BY p.method
+       HAVING sum(p.amount) > 0
+        ORDER BY revenue DESC`,
+      [from, to, tz]
     );
-    res.json(rows.map((r) => ({
-      method: r.method,
-      saleCount: Number(r.sale_count),
-      revenue: money(r.revenue),
-    })));
+    res.json(rows.map((r) => ({ method: r.method, saleCount: Number(r.sale_count), revenue: money(r.revenue) })));
   } catch (err) {
     next(err);
   }
@@ -247,19 +283,25 @@ exports.byPaymentMethod = async (req, res, next) => {
 exports.stockByCategory = async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `SELECT COALESCE(NULLIF(category, ''), 'Uncategorised') AS category,
-              COUNT(*) AS products,
-              SUM(stock_quantity) AS units,
-              SUM(stock_quantity * cost_price) AS value
-       FROM products
-       GROUP BY COALESCE(NULLIF(category, ''), 'Uncategorised')
-       ORDER BY value DESC`
+      `SELECT COALESCE(category, 'Uncategorised') AS category,
+              count(*) AS products,
+              sum(stock_quantity) AS units,
+              sum(stock_value_cost) AS value,
+              sum(stock_value_retail) AS retail_value,
+              count(*) FILTER (WHERE stock_status = 'low') AS low,
+              count(*) FILTER (WHERE stock_status = 'out') AS out
+         FROM v_product_stock
+        GROUP BY 1
+        ORDER BY value DESC`
     );
     res.json(rows.map((r) => ({
       category: r.category,
       products: Number(r.products),
       units: Number(r.units || 0),
       value: money(r.value),
+      retailValue: money(r.retail_value),
+      low: Number(r.low),
+      out: Number(r.out),
     })));
   } catch (err) {
     next(err);
@@ -269,42 +311,54 @@ exports.stockByCategory = async (req, res, next) => {
 /**
  * Today and this week against the equivalent earlier period, so the dashboard
  * can say whether things are up or down rather than just showing a number.
+ * "Today" is the shop's today, in its own timezone.
  */
 exports.pulse = async (req, res, next) => {
   try {
-    const startOfDay = (offsetDays) => {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - offsetDays);
-      return d.toISOString().slice(0, 19).replace('T', ' ');
-    };
-
-    async function windowTotals(fromExpr, toExpr) {
-      const { rows } = await db.query(
-        `SELECT COUNT(*) AS sale_count, COALESCE(SUM(total), 0) AS revenue
-         FROM sales WHERE created_at >= $1 AND created_at < $2`,
-        [fromExpr, toExpr]
-      );
-      return { saleCount: Number(rows[0].sale_count), revenue: money(rows[0].revenue) };
-    }
-
-    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const [today, yesterday, thisWeek, lastWeek] = await Promise.all([
-      windowTotals(startOfDay(0), now),
-      windowTotals(startOfDay(1), startOfDay(0)),
-      windowTotals(startOfDay(6), now),
-      windowTotals(startOfDay(13), startOfDay(6)),
-    ]);
-
+    const tz = await resolveTimezone(req);
+    const today = todayIn(tz);
+    const { rows } = await db.query(
+      `WITH bounds AS (
+         SELECT ($1::date::timestamp AT TIME ZONE $2) AS today_start,
+                (($1::date - 1)::timestamp AT TIME ZONE $2) AS yesterday_start,
+                (($1::date - 6)::timestamp AT TIME ZONE $2) AS week_start,
+                (($1::date - 13)::timestamp AT TIME ZONE $2) AS last_week_start,
+                (($1::date + 1)::timestamp AT TIME ZONE $2) AS tomorrow_start
+       )
+       SELECT
+         count(*) FILTER (WHERE s.created_at >= b.today_start AND s.created_at < b.tomorrow_start) AS today_count,
+         COALESCE(sum(s.total) FILTER (WHERE s.created_at >= b.today_start AND s.created_at < b.tomorrow_start), 0) AS today_revenue,
+         count(*) FILTER (WHERE s.created_at >= b.yesterday_start AND s.created_at < b.today_start) AS yesterday_count,
+         COALESCE(sum(s.total) FILTER (WHERE s.created_at >= b.yesterday_start AND s.created_at < b.today_start), 0) AS yesterday_revenue,
+         count(*) FILTER (WHERE s.created_at >= b.week_start AND s.created_at < b.tomorrow_start) AS week_count,
+         COALESCE(sum(s.total) FILTER (WHERE s.created_at >= b.week_start AND s.created_at < b.tomorrow_start), 0) AS week_revenue,
+         count(*) FILTER (WHERE s.created_at >= b.last_week_start AND s.created_at < b.week_start) AS last_week_count,
+         COALESCE(sum(s.total) FILTER (WHERE s.created_at >= b.last_week_start AND s.created_at < b.week_start), 0) AS last_week_revenue,
+         COALESCE(sum(s.total) FILTER (WHERE s.created_at >= (b.today_start - interval '28 days') AND s.created_at < b.today_start), 0) / 28.0 AS avg_day_revenue,
+         count(*) FILTER (WHERE s.created_at >= (b.today_start - interval '28 days') AND s.created_at < b.today_start) / 28.0 AS avg_day_count
+       FROM bounds b
+       LEFT JOIN sales s ON s.created_at >= b.last_week_start - interval '28 days'
+       GROUP BY b.today_start, b.yesterday_start, b.week_start, b.last_week_start, b.tomorrow_start`,
+      [today, tz]
+    );
+    const r = rows[0];
+    const shape = (count, revenue) => ({ saleCount: Number(count), revenue: money(revenue) });
+    const todayTotals = shape(r.today_count, r.today_revenue);
+    const yesterday = shape(r.yesterday_count, r.yesterday_revenue);
+    const thisWeek = shape(r.week_count, r.week_revenue);
+    const lastWeek = shape(r.last_week_count, r.last_week_revenue);
     const change = (current, previous) =>
       previous === 0 ? (current > 0 ? 100 : 0) : Math.round(((current - previous) / previous) * 100);
 
     res.json({
-      today,
+      timezone: tz,
+      date: today,
+      today: todayTotals,
       yesterday,
       thisWeek,
       lastWeek,
-      dayChangePercent: change(today.revenue, yesterday.revenue),
+      averageDay: { revenue: money(r.avg_day_revenue), saleCount: Math.round(Number(r.avg_day_count) * 10) / 10 },
+      dayChangePercent: change(todayTotals.revenue, yesterday.revenue),
       weekChangePercent: change(thisWeek.revenue, lastWeek.revenue),
     });
   } catch (err) {

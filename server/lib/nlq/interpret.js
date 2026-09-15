@@ -1,4 +1,4 @@
-const { describeTable, assertTable, badRequest } = require('../tables');
+const { listColumns, assertTable, badRequest } = require('../tables');
 const { complete, isConfigured, LlmError } = require('../llm');
 const { validateOperation, COLUMN_TYPES, OPERATORS, AGGREGATES } = require('./operations');
 
@@ -153,7 +153,9 @@ async function interpret(table, request) {
   if (!trimmed) throw badRequest('Type what you want to do first.');
   if (trimmed.length > 500) throw badRequest('That request is too long. Try saying it more briefly.');
 
-  const columns = await describeTable(table);
+  // Keys and bookkeeping columns are left out: the model should say "category",
+  // not "category_id".
+  const columns = (await listColumns(table)).filter((c) => c.name !== 'row_version' && !(c.name.endsWith('_id') && !c.virtual));
 
   if (!isConfigured()) {
     const guess = ruleBased(trimmed, columns);

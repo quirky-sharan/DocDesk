@@ -1,4 +1,5 @@
 const multer = require('multer');
+const { translate } = require('../lib/dbErrors');
 
 const MULTER_MESSAGES = {
   LIMIT_FILE_SIZE: 'That file is too large.',
@@ -19,17 +20,22 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: base + detail });
   }
 
-  const status = err.status || err.statusCode || 500;
+  // A rule the database enforced (a constraint, a trigger) becomes a sentence.
+  const database = err.status ? null : translate(err);
+  const status = database?.status || err.status || err.statusCode || 500;
+  const message = database?.message || err.message || 'Internal server error';
 
   // A 4xx is an expected, handled outcome - log it as one line. Only a 5xx is
   // an actual fault worth a stack trace.
   if (status >= 500) {
     console.error(err);
   } else {
-    console.warn(`${status} ${req.method} ${req.originalUrl} - ${err.message}`);
+    console.warn(`${status} ${req.method} ${req.originalUrl} - ${message}`);
   }
 
-  res.status(status).json({ error: err.message || 'Internal server error' });
+  const body = { error: message };
+  if (err.conflict) body.conflict = err.conflict;
+  res.status(status).json(body);
 }
 
 module.exports = errorHandler;

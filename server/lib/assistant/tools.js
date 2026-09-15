@@ -19,7 +19,7 @@ const { preview: previewOperation, apply: applyOperation } = require('../nlq/exe
 const PAGES = {
   dashboard: '/', reports: '/reports', inventory: '/inventory', products: '/inventory', sales: '/sales',
   orders: '/orders', purchase_orders: '/orders', 'incoming stock': '/orders', customers: '/customers',
-  suppliers: '/suppliers', files: '/files', messages: '/messages', settings: '/settings',
+  suppliers: '/suppliers', files: '/files', messages: '/messages', settings: '/settings', database: '/database',
 };
 
 const WRITABLE_TABLES = ['products', 'customers', 'suppliers'];
@@ -81,7 +81,7 @@ async function fetchList(table, { search, sort, dir, filters, limit }) {
 }
 
 async function extraColumns(table) {
-  const standard = new Set([...(FIELDS[table] || []), 'id', 'created_at', 'updated_at', 'is_active']);
+  const standard = new Set([...(FIELDS[table] || []), 'id', 'created_at', 'updated_at', 'is_active', 'row_version', 'category_id']);
   return (await describeTable(table)).map((c) => c.name).filter((c) => !standard.has(c));
 }
 
@@ -502,7 +502,8 @@ const TOOLS = {
       discount: { type: 'number' },
       tax_rate: { type: 'number' },
       payment_status: { type: 'string', enum: ['paid', 'unpaid', 'partial'] },
-      payment_method: { type: 'string', enum: ['cash', 'card', 'upi', 'bank'] },
+      amount_paid: { type: 'number', description: 'Required when partial.' },
+      payment_method: { type: 'string', enum: ['cash', 'card', 'upi', 'bank', 'other'] },
       notes: { type: 'string' },
     }, ['items']),
     async prepare(args) {
@@ -539,10 +540,17 @@ const TOOLS = {
       const discount = Number(args.discount || 0);
       const taxRate = args.tax_rate ?? Number(settings.default_tax_rate || 0);
       const tax = ((subtotal - discount) * taxRate) / 100;
+      const total = subtotal - discount + tax;
+      if (args.payment_status === 'partial') {
+        const paid = Number(args.amount_paid);
+        if (!(paid > 0)) throw new ToolError('For a part-paid sale, ask how much was paid now and pass amount_paid.');
+        if (paid >= total) throw new ToolError('That amount covers the whole sale - record it as paid instead.');
+      }
       if (discount) lines.push(['Discount', `−${money(discount, currency)}`]);
       if (taxRate) lines.push([`Tax (${taxRate}%)`, money(tax, currency)]);
-      lines.push(['Total', money(subtotal - discount + tax, currency)]);
+      lines.push(['Total', money(total, currency)]);
       lines.push(['Payment', `${args.payment_status || 'paid'}${args.payment_method ? `, ${args.payment_method}` : ''}`]);
+      if (args.payment_status === 'partial') lines.push(['Paid now', money(args.amount_paid, currency)]);
 
       return {
         title: 'Record sale',
@@ -555,6 +563,7 @@ const TOOLS = {
             discount,
             tax_rate: taxRate,
             payment_status: args.payment_status || 'paid',
+            amount_paid: args.payment_status === 'partial' ? args.amount_paid : undefined,
             payment_method: args.payment_method || 'cash',
             notes: args.notes,
           });
@@ -571,26 +580,89 @@ const TOOLS = {
 
   update_sale_payment: {
     kind: 'write',
-    description: 'Change a sale\'s payment status or method.',
+    description: 'Record payment on a sale: paid (settles the balance), partial (amount required), refunded, unpaid (clears payments), or change method.',
     parameters: obj({
       sale: { type: 'string' },
       payment_status: { type: 'string', enum: ['paid', 'unpaid', 'partial', 'refunded'] },
-      payment_method: { type: 'string', enum: ['cash', 'card', 'upi', 'bank'] },
+      amount: { type: 'number', description: 'Amount paid now (partial) or refunded.' },
+      payment_method: { type: 'string', enum: ['cash', 'card', 'upi', 'bank', 'other'] },
     }, ['sale']),
-    async prepare({ sale, payment_status, payment_method }) {
+    async prepare({ sale, payment_status, amount, payment_method }) {
       const row = await resolveRecord('sales', sale);
-      const lines = [['Sale', `${row.reference} (${row.total})`]];
+      const balance = Math.round((Number(row.total) - Number(row.amount_paid || 0)) * 100) / 100;
+      const lines = [['Sale', `${row.reference} (total ${row.total}, paid ${row.amount_paid ?? 0})`]];
       if (payment_status) lines.push(['Payment', `${row.payment_status} → ${payment_status}`]);
+      if (payment_status === 'paid' && balance > 0) lines.push(['Records', `${balance} received`]);
+      if (payment_status === 'partial') {
+        if (!(Number(amount) > 0)) throw new ToolError('How much was paid? Ask the user and pass amount.');
+        if (Number(amount) > balance) throw new ToolError(`Only ${balance} is still owed on ${row.reference}.`);
+        lines.push(['Records', `${amount} received`]);
+      }
+      if (payment_status === 'refunded') lines.push(['Refund', amount ?? row.amount_paid]);
       if (payment_method) lines.push(['Method', `${row.payment_method || '—'} → ${payment_method}`]);
       if (lines.length === 1) throw new ToolError('Nothing to change - give a payment_status or payment_method.');
       return {
         title: 'Update payment',
         summary: `Update payment on ${row.reference}`,
+        destructive: payment_status === 'unpaid' || payment_status === 'refunded',
         lines,
         async run() {
-          const updated = await api.put(`/sales/${row.id}`, { payment_status, payment_method });
-          return { message: `${updated.reference} is now ${updated.payment_status}.`, refresh: ['sales'] };
+          const updated = await api.put(`/sales/${row.id}`, { payment_status, amount, payment_method });
+          return {
+            message: `${updated.reference} is now ${updated.payment_status}${updated.balance_due > 0 ? ` with ${updated.balance_due} still owed` : ''}.`,
+            refresh: ['sales'],
+          };
         },
+      };
+    },
+  },
+
+  database_overview: {
+    kind: 'read',
+    description: 'Database health: size, tables and rows, recent changes, last backup, integrity problems.',
+    parameters: obj({}),
+    async run() {
+      const [overview, backups, integrity] = await Promise.all([
+        api.get('/db/overview'),
+        api.get('/db/backups'),
+        api.get('/db/integrity'),
+      ]);
+      const problems = integrity.results.filter((r) => r.status !== 'ok');
+      return {
+        data: {
+          engine: overview.engine.engine,
+          version: overview.database.version,
+          sizeMB: Math.round((overview.database.sizeBytes / 1048576) * 10) / 10,
+          tables: overview.objects.tables,
+          totalRows: overview.totalRows,
+          changesToday: overview.activity.changesToday,
+          lastBackup: backups.backups[0]?.createdAt || null,
+          integrityProblems: problems.map((p) => ({ check: p.title, count: p.count })),
+        },
+        block: {
+          type: 'stats',
+          title: 'Database',
+          items: [
+            { label: 'Size', value: `${Math.round((overview.database.sizeBytes / 1048576) * 10) / 10} MB` },
+            { label: 'Records', value: overview.totalRows },
+            { label: 'Changes today', value: overview.activity.changesToday },
+            { label: 'Integrity', value: problems.length ? `${problems.length} to review` : 'All good' },
+          ],
+        },
+      };
+    },
+  },
+
+  backup_database: {
+    kind: 'ui',
+    description: 'Make a backup of all data now and offer it for download.',
+    parameters: obj({}),
+    async run() {
+      const backup = await api.post('/db/backups', {});
+      const url = `/api/db/backups/${backup.name}`;
+      return {
+        data: { backup: backup.name, sizeKB: Math.round(backup.sizeBytes / 1024) },
+        block: { type: 'download', label: `Backup ${backup.name}`, url },
       };
     },
   },

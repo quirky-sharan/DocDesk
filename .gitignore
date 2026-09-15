@@ -40,3 +40,8 @@ server/db/*.sqlite-wal
 
 # Uploaded files (local storage)
 server/uploads/
+
+# Embedded PostgreSQL data and local backups (never commit a database)
+server/db/pgdata/
+server/backups/
+server/db/*.sqlite.imported-*

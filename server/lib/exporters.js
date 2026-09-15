@@ -9,6 +9,9 @@ function prettyHeader(key) {
 
 function cellToText(value) {
   if (value === null || value === undefined) return '';
+  // Timestamps as unambiguous ISO 8601 (UTC); structured values as JSON.
+  if (value instanceof Date) return value.toISOString().replace('T', ' ').replace(/.d{3}Z$/, 'Z');
+  if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
@@ -42,7 +45,11 @@ async function toXlsx(rows, columns, sheetName) {
 
   for (const row of rows) {
     const record = {};
-    for (const key of columns) record[key] = row[key] ?? '';
+    for (const key of columns) {
+      const value = row[key];
+      // Dates and numbers stay typed so Excel can sort and sum them.
+      record[key] = value === null || value === undefined ? '' : value instanceof Date || typeof value === 'number' ? value : cellToText(value);
+    }
     sheet.addRow(record);
   }
 
@@ -177,7 +184,7 @@ async function receiptToPdf(receipt) {
   const totals = [
     ['Subtotal', receipt.totals.subtotal],
     ...(receipt.totals.discount ? [['Discount', -receipt.totals.discount]] : []),
-    ...(receipt.totals.tax ? [['Tax', receipt.totals.tax]] : []),
+    ...(receipt.totals.tax ? [[receipt.totals.taxRate ? `Tax (${receipt.totals.taxRate}%)` : 'Tax', receipt.totals.tax]] : []),
   ];
 
   doc.fontSize(9);
@@ -192,6 +199,17 @@ async function receiptToPdf(receipt) {
   doc.text(money(receipt.totals.total), 450, y + 2, { width: 95, align: 'right' });
   doc.font('Helvetica').fontSize(9).fillColor('#666');
   y += 24;
+  if (receipt.totals.paid !== undefined && receipt.payment.status !== 'paid') {
+    doc.fillColor('#000').fontSize(9);
+    doc.text('Paid', 360, y, { width: 80, align: 'right' });
+    doc.text(money(receipt.totals.paid), 450, y, { width: 95, align: 'right' });
+    y += 14;
+    doc.font('Helvetica-Bold');
+    doc.text('Balance due', 340, y, { width: 100, align: 'right' });
+    doc.text(money(receipt.totals.balance), 450, y, { width: 95, align: 'right' });
+    doc.font('Helvetica').fillColor('#666');
+    y += 20;
+  }
   doc.text(
     `Payment: ${receipt.payment.status}${receipt.payment.method ? ` (${receipt.payment.method})` : ''}`,
     50,

@@ -1,6 +1,48 @@
-const { TABLES, assertTable, describeTable, listRows } = require('../lib/tables');
+const { TABLES, INTERNAL_COLUMNS, assertTable, listColumns, listRows } = require('../lib/tables');
 const { render, receiptToPdf, CONTENT_TYPES, FORMATS } = require('../lib/exporters');
 const { buildReceipt } = require('./sales');
+const { resolveTimezone } = require('../lib/timezone');
+
+// The same filters the list pages use, so a download is exactly what was on screen.
+const STOCK_FILTERS = {
+  low: 't.reorder_level > 0 AND t.stock_quantity > 0 AND t.stock_quantity <= t.reorder_level',
+  out: 't.stock_quantity <= 0',
+  in: 't.stock_quantity > 0',
+};
+const FILE_KINDS = {
+  image: "t.mime_type LIKE 'image/%'",
+  pdf: "t.mime_type = 'application/pdf'",
+  document: "(t.mime_type LIKE 'application/vnd%' OR t.mime_type = 'application/msword')",
+  data: "t.mime_type IN ('text/csv', 'application/json', 'text/plain')",
+};
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function filtersFor(table, query, req) {
+  switch (table) {
+    case 'products':
+      return {
+        where: { category: query.category, supplier_id: query.supplier_id },
+        extraConditions: STOCK_FILTERS[query.stock] ? [STOCK_FILTERS[query.stock]] : [],
+      };
+    case 'sales':
+      return {
+        where: { payment_status: query.payment_status },
+        ranges: [{
+          column: 'created_at',
+          from: DATE.test(query.from || '') ? query.from : undefined,
+          to: DATE.test(query.to || '') ? query.to : undefined,
+          timezone: await resolveTimezone(req),
+        }],
+      };
+    case 'purchase_orders':
+    case 'message_log':
+      return { where: { status: query.status } };
+    case 'files':
+      return { extraConditions: FILE_KINDS[query.kind] ? [FILE_KINDS[query.kind]] : [] };
+    default:
+      return {};
+  }
+}
 
 // What can be exported, so the UI can offer it without hardcoding a list.
 exports.options = async (req, res, next) => {
@@ -22,9 +64,8 @@ function sendFile(res, { body, contentType, filename }) {
 }
 
 /**
- * Exports any whitelisted table in any supported format. Honours the same
- * search/sort/filter the user had applied on screen, so what downloads matches
- * what they were looking at.
+ * Exports any whitelisted table in any supported format. Honours the search,
+ * sort and filters the person had applied on screen.
  */
 exports.table = async (req, res, next) => {
   try {
@@ -34,8 +75,8 @@ exports.table = async (req, res, next) => {
     const { search, sort, dir } = req.query;
 
     // paginate:false - an export is the whole filtered set, not one page.
-    const { rows } = await listRows(table, { search, sort, dir, paginate: false });
-    const columns = (await describeTable(table)).map((c) => c.name);
+    const { rows } = await listRows(table, { search, sort, dir, paginate: false, ...(await filtersFor(table, req.query, req)) });
+    const columns = (await listColumns(table)).map((c) => c.name).filter((name) => !INTERNAL_COLUMNS.has(name));
 
     const stamp = new Date().toISOString().slice(0, 10);
     sendFile(
