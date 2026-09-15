@@ -481,3 +481,102 @@ example. Fixed by adding the alias table rather than by weakening the example.
 `.gitignore` now covers `.env` at every level explicitly while keeping
 `.env.example` tracked. **Verified with `git check-ignore`, not assumed.**
 Setup instructions for Sharan are in REQUIREMENTS.md.
+
+---
+
+## 2026-09-15 — Phase 5: model retirement, the assistant, one-click launch
+
+### What broke
+
+`Groq returned an error: The model llama-3.3-70b-versatile does not exist`. The
+key was fine; Groq retired the model. Available to this key now: `openai/gpt-oss-120b`,
+`openai/gpt-oss-20b`, `qwen/qwen3.8-27b` (plus non-chat models). All three were
+tested for tool calling and pass.
+
+**Lesson: never hardcode a single model name.** `lib/llm/index.js` now asks
+`/models` what the key can use, walks a preference list, and falls through on
+"model not found" mid-request.
+
+### Free-tier limits are the real constraint
+
+Measured from response headers: **8,000 tokens/minute and 1,000 requests/day, per
+model**. One assistant step is ~2,000–3,000 prompt tokens (the tool schema alone
+is ~2,400), and a lookup question takes two steps. A single model throttles after
+two or three questions.
+
+What fixed it:
+- **Pool the models.** Separate buckets, ~24k/minute combined. Requests route to
+  whichever model has room.
+- **Model the bucket correctly.** Groq refills *continuously* (limit/60 per
+  second), not all at once at reset. The first version treated "remaining" as
+  frozen until reset and gave up far too early. `tokensNow()` is the fix.
+- Wait up to 25s for allowance rather than erroring; the UI says "Waiting for the
+  free AI allowance…" after 6s.
+- Shorter tool descriptions, older tool results truncated to 280 chars, history
+  capped at 24 messages.
+- qwen counts the same prompt as ~2x the tokens gpt-oss does (tokeniser). Keep
+  that in mind before reordering the preference list.
+
+### The assistant
+
+Replaced the per-page ask bar with one assistant on every page (Ctrl+K). It is a
+tool loop in `lib/assistant/`.
+
+Decisions not to undo:
+- **Tools act through DocDesk's own HTTP API** (`internalApi.js`), not the
+  database. So the assistant inherits every validation, transaction, stock move
+  and trigger, and can never do anything a button can't.
+- **Writes never run in the loop.** `prepare()` resolves names and validates,
+  returns a plain description, and the change runs only on Confirm. Pending plans
+  live server-side (30 min TTL) so the browser can only approve exactly what was
+  shown. This is also the prompt-injection defence: text stored in a record can
+  at most get a change *proposed*.
+- **A confirmed change that succeeded must never be reported as failed.** First
+  version: confirm created the customer, then the follow-up AI message hit a rate
+  limit and the whole response said it failed. The follow-up is now best-effort
+  with a 4s wait and a canned fallback.
+- The model sometimes invents a currency symbol the shop never set. It's stripped
+  when `currency_symbol` is blank.
+- Identical repeated tool calls in one turn are answered from memory (it did call
+  `show_on_page` twice in one turn during testing).
+- "Go to X and add Y" dropped the navigation, because the loop stops at a
+  proposal. Fixed in the prompt (navigate in the same step) plus an "Open page"
+  link after any confirmed change.
+
+### gpt-oss phrases operations differently from Llama
+
+Benchmark dropped to 6/12 on the new model. Raw output showed why:
+`{"type":"add_column","add_column":{...}}` and, from the assistant,
+`{"add_column":{...}}` with no `type` at all. `normaliseShape()` in
+`nlq/operations.js` collapses all three shapes before validating; an object naming
+two operations is still refused. Plus prompt rules: fields at top level, "price"
+means sale_price, a rename target is *meant* to be new. Back to **12/12**, and the
+assistant's table-structure tool went from three failed attempts to zero.
+
+**When switching models, run `npm run bench:ai` and read raw outputs on failure
+before touching prompts.**
+
+### One-click launch
+
+`start_all.bat` → `scripts/start.ps1` (batch quoting was too fragile). Checks
+Node, creates `server/.env` if missing, reinstalls packages when the lockfile hash
+changes (not just when node_modules is missing), migrates, starts API and web in
+minimised windows, waits for both to answer, reports AI status, opens the browser.
+Reuses anything already running.
+
+Gotchas found while testing:
+- Vite may bind IPv6 `localhost` only - check the web app by name, not 127.0.0.1.
+- npm renames the console window, so `stop_all` finds windows by **command line**
+  (`title DocDesk API`), not title, and kills the whole tree with `taskkill /T`.
+  Killing only the port owner left nodemon alive to restart the API later.
+- Stop is scoped to processes whose own or parent command line is inside this
+  folder, so nothing else on the machine is touched.
+- `.gitattributes` pins CRLF for .bat/.ps1 — a sed pass silently turned them LF.
+- **Testing artefact, not a bug:** processes started from the agent's PowerShell
+  tool are killed when that command ends. Launching via WMI (`Win32_Process
+  Create`) behaves like a double-click and stays up.
+
+### Security note
+
+Sharan pasted the Groq key into the conversation. It works and is in
+`server/.env` (gitignored, verified not in any commit). He should rotate it.

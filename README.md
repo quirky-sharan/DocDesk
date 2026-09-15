@@ -16,7 +16,17 @@ and hard to break.
 You need [Node.js](https://nodejs.org) 18 or newer. Nothing else — no database to
 install, no accounts to create, no keys.
 
-**Windows:** double-click `start_all.bat`.
+**Windows:** double-click **`start_all.bat`**. That's the only thing you need to run.
+
+It checks Node, installs packages the first time (and again whenever they
+change), prepares the database, starts the API and the web app, confirms the AI
+assistant is connected, and opens the browser. Run it again while DocDesk is
+already up and it just reuses what's running.
+
+To stop everything, double-click **`stop_all.bat`**.
+
+There is **no separate AI or ML server** — the assistant runs inside the API and
+calls Groq, so the two windows `start_all.bat` opens are the whole of DocDesk.
 
 **Anything else:**
 
@@ -112,10 +122,20 @@ whatever search and sorting you had applied.
 
 **Settings** — your shop's name, address and footer go on every receipt.
 
-**Ask in plain English** — type *"sort by price, cheapest first"* or *"add a
-column for expiry date"* above any table. It shows you what it's about to do,
-with a preview, and waits for you to say yes. Simple requests work out of the
-box; connect a free AI key (see `REQUIREMENTS.md`) and it understands the rest.
+**The assistant** — a receptionist on every page. Click **Ask DocDesk** in the
+corner or press **Ctrl+K**, and ask or tell it anything:
+
+- *"How are we doing today?"* · *"What needs reordering?"*
+- *"Show me unpaid sales"* — it opens Sales and sets the filter for you
+- *"Sell 3 sticky notes to Priya, paid by UPI"* — and hands you the receipt
+- *"Add a supplier called Metro Traders, phone 98…"*
+- *"Order everything that's running low"* · *"Export customers to Excel"*
+- *"Add a column for expiry date"*
+
+**It never changes anything without asking.** Looking things up happens
+straight away; anything that adds, edits, deletes or orders shows a card with
+exactly what will happen, and waits for you to click Confirm. Deletions are
+marked in red. It needs a free Groq key — see `REQUIREMENTS.md`.
 
 **Light or dark** — the toggle in the top bar cycles: match your computer,
 always light, always dark. It remembers your choice.
@@ -125,6 +145,9 @@ always light, always dark. It remembers your choice.
 | Route | Purpose |
 |---|---|
 | `GET /api/health` | liveness plus a real database round trip |
+| `POST /api/assistant/message` | one assistant turn |
+| `POST /api/assistant/confirm` · `/cancel` | approve or reject a proposed change |
+| `GET /api/ai/status?probe=1` | whether the AI is connected, and which model |
 | `GET /api/stats` | live row counts |
 | `GET/POST /api/products`, `/customers`, `/suppliers` | list and create |
 | `GET/PUT/DELETE /api/products/:id` | single record |

@@ -18,14 +18,13 @@ Restart the server after editing it.
 
 ## 1. AI assistant — worth doing now
 
-**What it unlocks:** the "Ask in plain English" box on Inventory, Sales,
-Customers and Suppliers. Type *"show me everything from Northwind that's running
-low"* or *"set the category to Misc for anything with no category"* and it works
-out what you meant, shows you what it will do, and waits for you to confirm.
+**What it unlocks:** the assistant on every page (**Ask DocDesk**, or
+**Ctrl+K**). It can look things up, sort and filter your lists, record sales,
+add, change or delete records, order and receive stock, run reports and export
+files. Every change waits for you to click Confirm.
 
-**Without a key it still works, but only for simple phrasings** — "sort by
-price, cheapest first", "add a column for expiry date". Anything more and it
-tells you plainly that it can't.
+**Without a key** the rest of DocDesk works normally and the assistant says it
+isn't connected.
 
 ### Get a Groq key — 2 minutes, free, no card
 
@@ -39,8 +38,12 @@ tells you plainly that it can't.
 GROQ_API_KEY=gsk_paste_your_key_here
 ```
 
-5. Restart the server. The Inventory page should stop saying "Simple requests
-   only".
+5. Run `stop_all.bat`, then `start_all.bat`. The launcher prints
+   **"AI assistant connected"** when it's working.
+
+> **If you ever paste your key into a chat, email or screenshot, rotate it:** go
+> to console.groq.com/keys, delete that key, create a new one, and put the new one
+> in `server/.env`.
 
 **Check it worked:**
 
@@ -55,7 +58,7 @@ is *supposed* to refuse. You'll see accuracy and latency.
 
 | | Free tier | Notes |
 |---|---|---|
-| **Groq** ← recommended | ~14,400 requests/day, 30/min on `llama-3.3-70b-versatile`. No card. | By far the fastest — usually well under a second. Supports JSON mode, which removes a whole class of "here is your JSON:" parsing failures. |
+| **Groq** ← recommended | No card. Per model: **8,000 tokens/minute and 1,000 requests/day** (measured from this key's rate-limit headers, Sept 2026). | Fastest option — typically under a second per step. DocDesk uses three Groq models (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`), each with its own allowance, so together they give roughly 24,000 tokens/minute. |
 | OpenRouter | Varies by model; the `:free` models are genuinely free but rate-limited and sometimes queue. | Useful if you want to try several models without several accounts. Set `OPENROUTER_API_KEY`. |
 | Together | $1 free credit, plus some models marked Free. | Fine, but the free allowance is small enough to run out. Set `TOGETHER_API_KEY`. |
 | Local (Ollama) | Unlimited, no key, fully private. | Needs a reasonably powerful machine and is much slower. Set `LLM_PROVIDER=custom` and `LLM_BASE_URL=http://localhost:11434/v1`. |
@@ -67,8 +70,22 @@ To override the automatic choice:
 
 ```
 LLM_PROVIDER=groq
-LLM_MODEL=llama-3.3-70b-versatile
+LLM_MODEL=openai/gpt-oss-120b
 ```
+
+**You shouldn't need `LLM_MODEL`.** DocDesk asks Groq which models your key can
+use and picks from its list automatically — so when Groq retires a model (as it
+did with `llama-3.3-70b-versatile`), the app moves to the next one instead of
+breaking.
+
+### What "busy" means
+
+One assistant answer costs about 2,000–3,000 tokens per step, and a question that
+needs a lookup takes two steps. At a normal typing pace that's comfortably within
+the free allowance. If you fire off several requests in a few seconds, the
+assistant shows *"Waiting for the free AI allowance…"* and carries on once
+there's room — usually within 10–20 seconds. It only gives up if every model is
+busy for longer than that, and then it says so.
 
 **No paid tiers anywhere.** If you ever see a bill from this, something is
 wrong — tell me.
