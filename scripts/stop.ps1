@@ -20,6 +20,22 @@ function Stop-Tree($processId, $label) {
   }
 }
 
+# Ask the API to close the database cleanly first, so the embedded PostgreSQL
+# finishes writing before its process is ended.
+if ($Only -in 'all', 'api') {
+  try {
+    Invoke-RestMethod -UseBasicParsing -Method Post -Uri 'http://127.0.0.1:5000/api/system/shutdown' `
+      -Headers @{ 'x-docdesk-stop' = 'yes' } -TimeoutSec 5 | Out-Null
+    Write-Host '  [ok] Database closed' -ForegroundColor Green
+    for ($i = 0; $i -lt 20; $i++) {
+      if (-not (Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue)) { break }
+      Start-Sleep -Milliseconds 250
+    }
+  } catch {
+    # Not running, or already stopping - the steps below handle both.
+  }
+}
+
 $targets = @()
 if ($Only -in 'all', 'api') { $targets += @{ Title = 'DocDesk API'; Port = 5000; Label = 'the API' } }
 if ($Only -in 'all', 'web') { $targets += @{ Title = 'DocDesk Web'; Port = 5173; Label = 'the web app' } }

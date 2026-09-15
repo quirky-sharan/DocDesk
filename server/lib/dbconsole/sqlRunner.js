@@ -174,6 +174,24 @@ function serialiseCell(value) {
 class Rollback extends Error {}
 
 /**
+ * Error positions count from the start of what PostgreSQL was sent; shift them
+ * back to the query as typed (before any prefix we added and any leading space).
+ */
+async function pointingAt(sql, prefix, work) {
+  try {
+    return await work();
+  } catch (err) {
+    if (err && err.position) {
+      const lead = String(sql).length - String(sql).trimStart().length;
+      const position = Number(err.position) - prefix.length + lead;
+      if (position > 0) err.position = position;
+      else delete err.position;
+    }
+    throw err;
+  }
+}
+
+/**
  * Runs `fn` inside a transaction and always rolls it back afterwards, handing
  * back whatever `fn` produced. Used for reads (so nothing - not even a session
  * setting - survives) and for EXPLAIN ANALYZE of a change.
@@ -217,7 +235,7 @@ async function run(sql, { allowWrite = false } = {}) {
       const result = await db.query(text);
       return { kind: statement.kind, command: statement.command, columns: [], rows: [], rowCount: result.rowCount, durationMs: Math.round(performance.now() - started) };
     }
-    const result = await db.transaction((tx) => tx.query(text, [], { rowMode: 'array' }), { timeoutMs: TIMEOUT_MS, actor: 'sql-console' });
+    const result = await pointingAt(sql, '', () => db.transaction((tx) => tx.query(text, [], { rowMode: 'array' }), { timeoutMs: TIMEOUT_MS, actor: 'sql-console' }));
     if (statement.ddl) invalidateSchemaCache();
     const columns = await describeTypes(result.fields || []);
     return {
@@ -235,18 +253,19 @@ async function run(sql, { allowWrite = false } = {}) {
     if (statement.analyze && statement.innerWrites && !allowWrite) {
       throw fail('EXPLAIN ANALYZE runs the change to measure it. Switch to "Allow changes" first - it is rolled back afterwards.', 403);
     }
-    const result = await withRollback((tx) => tx.query(text, [], { rowMode: 'array' }), { readOnly: !statement.innerWrites });
+    const result = await pointingAt(sql, '', () => withRollback((tx) => tx.query(text, [], { rowMode: 'array' }), { readOnly: !statement.innerWrites }));
     const columns = await describeTypes(result.fields || []);
     return { kind: 'read', command: 'explain', columns, rows: result.rows.map((r) => r.map(serialiseCell)), rowCount: result.rows.length, durationMs: Math.round(performance.now() - started) };
   }
 
   // Read: a cursor fetches at most MAX_ROWS + 1, so a huge result never has to
   // be built in full just to show the first page of it.
-  const result = await withRollback(async (tx) => {
+  const cursorPrefix = statement.command === 'show' ? '' : 'DECLARE docdesk_console NO SCROLL CURSOR FOR ';
+  const result = await pointingAt(sql, cursorPrefix, () => withRollback(async (tx) => {
     if (statement.command === 'show') return tx.query(text, [], { rowMode: 'array' });
-    await tx.query(`DECLARE docdesk_console NO SCROLL CURSOR FOR ${text}`);
+    await tx.query(`${cursorPrefix}${text}`);
     return tx.query(`FETCH ${MAX_ROWS + 1} FROM docdesk_console`, [], { rowMode: 'array' });
-  }, { readOnly: true });
+  }, { readOnly: true }));
 
   const rows = result.rows || [];
   const columns = await describeTypes(result.fields || []);
@@ -281,7 +300,8 @@ async function explain(sql, { analyze = true, allowWrite = false } = {}) {
   const text = String(sql).trim().replace(/;\s*$/, '');
   const options = analyze ? 'ANALYZE, BUFFERS, FORMAT JSON' : 'FORMAT JSON';
   const started = performance.now();
-  const result = await withRollback((tx) => tx.query(`EXPLAIN (${options}) ${text}`), { readOnly: !writes });
+  const prefix = `EXPLAIN (${options}) `;
+  const result = await pointingAt(sql, prefix, () => withRollback((tx) => tx.query(`${prefix}${text}`), { readOnly: !writes }));
   const raw = result.rows[0]?.['QUERY PLAN'];
   const plan = typeof raw === 'string' ? JSON.parse(raw) : raw;
   return { analyze, durationMs: Math.round(performance.now() - started), plan: plan?.[0] || null };

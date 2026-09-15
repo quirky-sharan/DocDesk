@@ -22,11 +22,23 @@ const TABLES = {
     label: 'Customers',
     defaultSort: 'name',
     searchable: ['name', 'phone', 'email', 'address'],
+    computed: {
+      visits: '(SELECT count(*) FROM sales s WHERE s.customer_id = t.id)',
+      lifetime_value: '(SELECT COALESCE(sum(s.total), 0) FROM sales s WHERE s.customer_id = t.id)',
+      last_purchase_at: '(SELECT max(s.created_at) FROM sales s WHERE s.customer_id = t.id)',
+      outstanding: "(SELECT COALESCE(sum(s.total - s.amount_paid), 0) FROM sales s WHERE s.customer_id = t.id AND s.payment_status IN ('unpaid', 'partial'))",
+    },
   },
   suppliers: {
     label: 'Suppliers',
     defaultSort: 'name',
     searchable: ['name', 'contact_name', 'phone', 'email'],
+    computed: {
+      products_supplied: '(SELECT count(*) FROM products p WHERE p.supplier_id = t.id)',
+      open_orders: "(SELECT count(*) FROM purchase_orders po WHERE po.supplier_id = t.id AND po.status IN ('ordered', 'partial'))",
+      ordered_value: "(SELECT COALESCE(sum(po.total), 0) FROM purchase_orders po WHERE po.supplier_id = t.id AND po.status <> 'cancelled')",
+      last_order_at: '(SELECT max(po.created_at) FROM purchase_orders po WHERE po.supplier_id = t.id)',
+    },
   },
   categories: {
     label: 'Categories',
@@ -41,7 +53,10 @@ const TABLES = {
     joins: [
       { table: 'customers', alias: 'c', on: 'c.id = t.customer_id', columns: { customer_name: 'c.name' } },
     ],
-    computed: { balance_due: '(t.total - t.amount_paid)' },
+    computed: {
+      balance_due: '(t.total - t.amount_paid)',
+      item_count: '(SELECT count(*) FROM sale_items si WHERE si.sale_id = t.id)',
+    },
   },
   sale_items: {
     label: 'Sale line items',
@@ -64,6 +79,11 @@ const TABLES = {
     joins: [
       { table: 'suppliers', alias: 'sup', on: 'sup.id = t.supplier_id', columns: { supplier_name: 'sup.name' } },
     ],
+    computed: {
+      units_ordered: '(SELECT COALESCE(sum(i.quantity), 0) FROM purchase_order_items i WHERE i.purchase_order_id = t.id)',
+      units_received: '(SELECT COALESCE(sum(i.quantity_received), 0) FROM purchase_order_items i WHERE i.purchase_order_id = t.id)',
+      line_count: '(SELECT count(*) FROM purchase_order_items i WHERE i.purchase_order_id = t.id)',
+    },
   },
   purchase_order_items: {
     label: 'Purchase order items',

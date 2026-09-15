@@ -118,14 +118,14 @@ Ensure-Packages $Server 'server'
 Ensure-Packages $Client 'web app'
 
 # --- 4. Database --------------------------------------------------------------
-Push-Location $Server
-try {
-  & node db/migrate.js | Out-Null
-  if ($LASTEXITCODE -ne 0) { Fail 'Preparing the database failed. Nothing was started.' }
-} finally {
-  Pop-Location
+# DocDesk runs on PostgreSQL. Without DATABASE_URL it uses the embedded engine
+# in server\db\pgdata - nothing to install. The API opens it, applies any new
+# migrations and (once) carries over an old SQLite database when it starts.
+if ($envText -match '(?m)^\s*DATABASE_URL\s*=\s*\S+') {
+  Ok 'Database: hosted PostgreSQL (DATABASE_URL)'
+} else {
+  Ok 'Database: embedded PostgreSQL (server\db\pgdata)'
 }
-Ok 'Database ready'
 
 # --- 5. API (also runs the AI assistant) -------------------------------------
 $apiHealth = "http://127.0.0.1:$ApiPort/api/health"
@@ -139,13 +139,20 @@ if (Test-Url $apiHealth) {
   if ($owner) {
     Fail "Port $ApiPort is taken by $owner, which isn't DocDesk. Close that program and run start_all.bat again."
   }
-  Step 'Starting the API...'
+  Step 'Starting the API and opening the database (the very first start takes a little longer)...'
   Start-Process -FilePath 'cmd.exe' -WorkingDirectory $Server -WindowStyle Minimized `
     -ArgumentList '/k', 'title DocDesk API && npm run dev'
-  if (-not (Wait-Url $apiHealth 60 'the API')) {
+  if (-not (Wait-Url $apiHealth 150 'the API')) {
     Fail 'The API did not start. Open the "DocDesk API" window to see why.'
   }
   Ok "API running on http://localhost:$ApiPort"
+}
+
+try {
+  $health = Invoke-RestMethod -UseBasicParsing -Uri $apiHealth -TimeoutSec 20
+  Ok "$($health.database.engine) $($health.database.version) - $($health.database.tables) tables"
+} catch {
+  Warn 'Could not read the database status.'
 }
 
 # --- 6. AI status -------------------------------------------------------------

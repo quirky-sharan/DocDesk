@@ -35,6 +35,7 @@ function errorHandler(err, req, res, next) {
 
   const body = { error: message };
   if (err.conflict) body.conflict = err.conflict;
+  if (database?.position) body.position = database.position;
   res.status(status).json(body);
 }
 

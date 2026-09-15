@@ -39,6 +39,13 @@ function translate(err) {
 
   if (err.hint === 'docdesk') return { status: 409, message: err.message };
 
+  const result = translateCode(err);
+  // Where in the statement it went wrong, so the console can point at it.
+  if (result && err.position && /^42/.test(err.code)) result.position = Number(err.position);
+  return result;
+}
+
+function translateCode(err) {
   const byConstraint = err.constraint && CONSTRAINT_MESSAGES[err.constraint];
   switch (err.code) {
     case '23505':
@@ -81,6 +88,11 @@ function translate(err) {
     case '57P01':
       return { status: 503, message: 'The database connection dropped. Please try again in a moment.' };
     default:
+      // Anything else in the "bad data" (22) or "bad statement" (42) classes is
+      // the query's fault, not the server's - mostly typed in the SQL console.
+      if (err.code.startsWith('22') || err.code.startsWith('42') || err.code === 'P0001') {
+        return { status: 400, message: err.message.charAt(0).toUpperCase() + err.message.slice(1) };
+      }
       return null;
   }
 }
