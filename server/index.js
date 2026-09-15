@@ -2,28 +2,56 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-const doctorRoutes = require('./routes/doctors');
-const patientRoutes = require('./routes/patients');
-const appointmentRoutes = require('./routes/appointments');
-const medicineRoutes = require('./routes/medicines');
-const inventoryRoutes = require('./routes/inventory');
-const billRoutes = require('./routes/bills');
+const db = require('./db');
+const { listTables } = require('./db/migrate');
+const errorHandler = require('./middleware/errorHandler');
+const systemRoutes = require('./routes/system');
+const devRoutes = require('./routes/dev');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json());
 
-// Health check
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api', systemRoutes);
+app.use('/api/dev', devRoutes);
 
-// Routes
-app.use('/api/doctors', doctorRoutes);
-app.use('/api/patients', patientRoutes);
-app.use('/api/appointments', appointmentRoutes);
-app.use('/api/medicines', medicineRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/bills', billRoutes);
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
+});
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`DocDesk server running on port ${PORT}`));
+app.use(errorHandler);
+
+const PORT = Number(process.env.PORT) || 5000;
+
+async function start() {
+  // Fail loudly at boot rather than letting every request 500 later.
+  try {
+    await db.query('SELECT 1');
+  } catch (err) {
+    console.error(`Cannot reach the ${db.name} database: ${err.message}`);
+    process.exit(1);
+  }
+
+  const tables = await listTables();
+  if (tables.length === 0) {
+    console.warn('Database has no tables yet. Run: npm run migrate');
+  }
+
+  const server = app.listen(PORT, () => {
+    console.log(`DocDesk API listening on http://localhost:${PORT}`);
+    console.log(`  database: ${db.name}${db.file ? ` (${db.file})` : ''}`);
+    console.log(`  tables:   ${tables.length}`);
+  });
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      server.close(async () => {
+        await db.close();
+        process.exit(0);
+      });
+    });
+  }
+}
+
+start();

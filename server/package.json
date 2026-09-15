@@ -1,11 +1,14 @@
 {
   "name": "docdesk-server",
   "version": "1.0.0",
-  "description": "DocDesk clinic management system — Express REST API",
+  "description": "DocDesk - universal front-desk and inventory system (Express API)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "migrate": "node db/migrate.js",
+    "seed": "node db/seed.js",
+    "seed:clear": "node db/seed.js clear"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
