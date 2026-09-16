@@ -46,8 +46,13 @@ server/db/pgdata/
 server/db/pgdata.lock
 server/backups/
 server/db/*.sqlite.imported-*
-server/db/test-pgdata/
-server/db/test-pgdata.lock
+# Every throwaway database a test or a probe makes. Matched by prefix so a
+# new test file inventing its own folder name is ignored too - the first one
+# that did got committed.
+server/db/test-*pgdata*/
+server/db/test-*pgdata*.lock
+server/db/scratch-*/
+server/db/scratch-*.lock
 
 # Output from the graphify tool.
 graphify-out/

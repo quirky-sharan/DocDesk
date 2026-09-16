@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 if (!process.env.DATABASE_URL) {
-  process.env.PGDATA_DIR = process.env.TEST_PGDATA_DIR || path.join(__dirname, '..', 'db', 'test-scheduling-pgdata');
+  process.env.PGDATA_DIR = process.env.TEST_PGDATA_DIR || path.join(__dirname, '..', 'db', 'test-pgdata-scheduling');
   fs.rmSync(process.env.PGDATA_DIR, { recursive: true, force: true });
   fs.rmSync(`${process.env.PGDATA_DIR}.lock`, { force: true });
 }
