@@ -87,6 +87,13 @@ writes to it — a page, the assistant, or someone typing SQL.
 
 `server/db/ER_diagram.md` has the full schema, generated from the live catalog.
 
+Those rules are covered by tests: `cd server && npm test` runs 21 checks — negative
+stock, a sale that doesn't add up, part payments and refunds, low-stock alerts,
+purchase receipts, the audit trail, timezone bucketing, typo-tolerant search and
+transaction rollback — against a throwaway database it creates and deletes itself.
+Point `DATABASE_URL` at a hosted database and the same tests check that too, so a
+deployment can be verified before it carries real data.
+
 ---
 
 ## What it does
@@ -178,6 +185,7 @@ Run these from `server/`.
 | `npm run migrate` | apply pending migrations — refuses while the API has the database open |
 | `npm run seed` | load the sample data into an empty database |
 | `npm run seed:clear` | delete all business records |
+| `npm test` | run the database rules against a throwaway database (never your data) |
 | `npm run bench:ai` | score the assistant against real requests |
 
 ## API

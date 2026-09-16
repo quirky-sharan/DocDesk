@@ -46,3 +46,5 @@ server/db/pgdata/
 server/db/pgdata.lock
 server/backups/
 server/db/*.sqlite.imported-*
+server/db/test-pgdata/
+server/db/test-pgdata.lock
