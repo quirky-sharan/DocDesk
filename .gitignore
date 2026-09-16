@@ -48,3 +48,6 @@ server/backups/
 server/db/*.sqlite.imported-*
 server/db/test-pgdata/
 server/db/test-pgdata.lock
+
+# Output from the graphify tool.
+graphify-out/
