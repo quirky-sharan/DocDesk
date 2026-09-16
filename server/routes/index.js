@@ -11,7 +11,7 @@ const files = require('../controllers/files');
 const settings = require('../controllers/settings');
 const reports = require('../controllers/reports');
 const importProducts = require('../controllers/importProducts');
-const assistant = require('../controllers/assistant');
+const receptionist = require('../controllers/receptionist');
 const database = require('../controllers/database');
 const search = require('../controllers/search');
 const { upload, importUpload } = require('../lib/storage');
@@ -90,10 +90,10 @@ router.get('/reports/heatmap', reports.heatmap);
 router.get('/reports/by-weekday', reports.byWeekday);
 router.get('/customers/:id/history', reports.customerHistory);
 
-router.get('/ai/status', assistant.status);
-router.post('/assistant/message', assistant.message);
-router.post('/assistant/confirm', assistant.confirm);
-router.post('/assistant/cancel', assistant.cancel);
+router.get('/ai/status', receptionist.status);
+router.post('/receptionist/message', receptionist.message);
+router.post('/receptionist/confirm', receptionist.confirm);
+router.post('/receptionist/cancel', receptionist.cancel);
 
 // One search box for everything (Spotlight).
 router.get('/search', search.search);

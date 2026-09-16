@@ -3,10 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowRight, ArrowUp, Check, CircleAlert, Download, KeyRound, RotateCcw, Sparkles, X } from 'lucide-react';
 import { apiUrl } from '../api/client';
-import { useAssistant } from './AssistantProvider';
+import { useReceptionist } from './ReceptionistProvider';
 import Markdown from './Markdown';
 import { Button } from '../components/ui';
 import { cn } from '../lib/cn';
+import brand from '@shared/brand.json';
 
 const SUGGESTIONS = {
   '/': ['How are we doing today?', 'What needs reordering?', 'Show unpaid sales'],
@@ -50,9 +51,9 @@ function formatValue(value, money) {
 
 // ---------------------------------------------------------------------------
 
-/** A floating orb that opens the assistant; expands to show its name on hover. */
-export function AssistantLauncher() {
-  const { open, setOpen, openCount, status, busy } = useAssistant();
+/** A floating orb that opens the receptionist; expands to show its name on hover. */
+export function ReceptionistLauncher() {
+  const { open, setOpen, openCount, status, busy } = useReceptionist();
 
   return (
     <AnimatePresence>
@@ -68,8 +69,9 @@ export function AssistantLauncher() {
           transition={{ type: 'spring', stiffness: 420, damping: 26 }}
           className="glass group fixed bottom-5 right-5 z-40 flex h-14 items-center rounded-full p-2 text-[14px] font-semibold text-ink"
           style={{ background: 'var(--glass-strong)', boxShadow: '0 0 0 1px var(--glass-outline, var(--line)), var(--shadow-xl)' }}
-          title="Ask DocDesk (Ctrl+J)"
-          aria-label="Open the DocDesk assistant"
+          data-receptionist-launcher
+          title={`Ask ${brand.receptionist} (Ctrl+J)`}
+          aria-label={`Open ${brand.receptionist}`}
         >
           <span className={cn('ai-orb h-10 w-10 shrink-0', busy && 'is-busy')} />
           <motion.span
@@ -77,7 +79,7 @@ export function AssistantLauncher() {
             initial={{ width: 0, opacity: 0, marginLeft: 0, marginRight: 0 }}
             className="flex items-center gap-2 overflow-hidden whitespace-nowrap"
           >
-            Ask DocDesk <kbd className="kbd">Ctrl J</kbd>
+            Ask {brand.receptionistShort} <kbd className="kbd">Ctrl J</kbd>
           </motion.span>
           {openCount > 0 && (
             <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[rgb(var(--c-danger))] px-1 text-[11px] font-semibold text-white" style={{ boxShadow: '0 0 0 2px rgb(var(--c-canvas))' }}>
@@ -93,8 +95,8 @@ export function AssistantLauncher() {
   );
 }
 
-export default function AssistantPanel() {
-  const { open, setOpen, entries, busy, busySince, status, send, reset } = useAssistant();
+export default function ReceptionistPanel() {
+  const { open, setOpen, entries, busy, busySince, status, send, reset } = useReceptionist();
   const { pathname } = useLocation();
   const [draft, setDraft] = useState('');
   const scroller = useRef(null);
@@ -123,14 +125,15 @@ export default function AssistantPanel() {
     <AnimatePresence>
       {open && (
         <motion.aside
-          key="assistant"
+          key="receptionist"
           initial={{ opacity: 0, x: 40, scale: 0.98 }}
           animate={{ opacity: 1, x: 0, scale: 1 }}
           exit={{ opacity: 0, x: 40, scale: 0.98, transition: { duration: 0.2 } }}
           transition={{ type: 'spring', stiffness: 320, damping: 32 }}
           className="glass fixed inset-0 z-50 flex flex-col overflow-hidden sm:inset-auto sm:bottom-3 sm:right-3 sm:top-3 sm:w-[440px] sm:rounded-[28px]"
           style={{ background: 'var(--glass-strong)', boxShadow: '0 0 0 1px var(--glass-outline, var(--line)), var(--shadow-xl)' }}
-          aria-label="DocDesk assistant"
+          aria-label={brand.receptionist}
+          data-receptionist-panel
         >
           {/* A slowly turning rainbow edge while it is working, like Siri. */}
           <span aria-hidden="true" className={cn('ai-glow', busy && 'is-active')} />
@@ -139,7 +142,7 @@ export default function AssistantPanel() {
           <header className="relative flex h-16 shrink-0 items-center gap-3 px-4" style={{ borderBottom: '1px solid var(--line)' }}>
             <span className={cn('ai-orb h-9 w-9 shrink-0', busy && 'is-busy')} />
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">DocDesk</p>
+              <p className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">{brand.receptionist}</p>
               <p className="flex items-center gap-1.5 text-[12px] leading-tight text-ink-3">
                 <span className={cn('h-1.5 w-1.5 rounded-full', busy && 'animate-pulse')} style={{ background: notConfigured ? 'rgb(var(--c-warning))' : status?.reachable === false ? 'rgb(var(--c-danger))' : 'rgb(var(--c-success))' }} />
                 {notConfigured ? 'Not connected' : busy ? 'Working…' : status?.model ? `Ready · ${status.label || status.provider}` : 'Ready to help'}
@@ -150,7 +153,7 @@ export default function AssistantPanel() {
                 <RotateCcw size={14} /> New
               </button>
             )}
-            <button type="button" className="btn-ghost btn-icon" onClick={() => setOpen(false)} aria-label="Close assistant" title="Close (Esc)">
+            <button type="button" className="btn-ghost btn-icon" onClick={() => setOpen(false)} aria-label={`Close ${brand.receptionist}`} title="Close (Esc)">
               <X size={17} />
             </button>
           </header>
@@ -160,7 +163,7 @@ export default function AssistantPanel() {
               <div className="flex gap-3 rounded-[18px] p-3.5 text-[13px]" style={{ background: 'var(--warning-soft)' }}>
                 <KeyRound size={16} className="mt-0.5 shrink-0 text-warning" />
                 <div>
-                  <p className="font-semibold text-warning">The assistant isn&apos;t connected yet</p>
+                  <p className="font-semibold text-warning">{brand.receptionist} isn&apos;t connected yet</p>
                   <p className="mt-1 leading-relaxed text-ink">Add a free Groq key as <code className="kbd">GROQ_API_KEY</code> in <code className="kbd">server/.env</code> and restart. Everything else works without it.</p>
                 </div>
               </div>
@@ -285,14 +288,14 @@ function Thinking({ since }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-2.5 text-[13px] text-ink-2">
-      <span className="assistant-dots" aria-hidden="true"><i /><i /><i /></span>
+      <span className="receptionist-dots" aria-hidden="true"><i /><i /><i /></span>
       <span>{seconds < 6 ? 'Thinking…' : 'Waiting for the free AI allowance - a few more seconds…'}</span>
     </motion.div>
   );
 }
 
 function Entry({ entry, onRetry }) {
-  const { cards } = useAssistant();
+  const { cards } = useReceptionist();
 
   if (entry.role === 'user') {
     return (
@@ -430,7 +433,7 @@ function Block({ block }) {
 }
 
 function ActionCard({ card }) {
-  const { confirm, cancel, busy } = useAssistant();
+  const { confirm, cancel, busy } = useReceptionist();
   const isOpen = card.state === 'open';
 
   return (
@@ -470,7 +473,7 @@ function ActionCard({ card }) {
           )}
           {card.state === 'confirming' && (
             <motion.p key="confirming" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-[13px] text-ink-2">
-              <span className="assistant-dots" aria-hidden="true"><i /><i /><i /></span> Working on it…
+              <span className="receptionist-dots" aria-hidden="true"><i /><i /><i /></span> Working on it…
             </motion.p>
           )}
           {card.state === 'done' && (

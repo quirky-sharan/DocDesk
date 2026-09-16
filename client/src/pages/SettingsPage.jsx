@@ -11,6 +11,7 @@ import { useTheme } from '../hooks/useTheme';
 import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, useToast } from '../components/ui';
 import { Reveal } from '../components/motion/Reveal';
 import { cn } from '../lib/cn';
+import brand from '@shared/brand.json';
 
 const CURRENCIES = ['₹', '$', '€', '£', '¥', 'AED', 'Rs'];
 const SECTIONS = [
@@ -19,7 +20,7 @@ const SECTIONS = [
   ['receipts', 'Receipts', Receipt],
   ['region', 'Region', Globe2],
   ['appearance', 'Appearance', Palette],
-  ['assistant', 'Assistant', Bot],
+  ['receptionist', brand.receptionist, Bot],
   ['data', 'Data', Database],
   ['shortcuts', 'Shortcuts', Keyboard],
 ];
@@ -143,7 +144,7 @@ export default function SettingsPage() {
           )}
 
           <AppearanceGroup />
-          <AssistantGroup />
+          <ReceptionistGroup />
           <DataGroup />
           <ShortcutsGroup />
         </div>
@@ -290,7 +291,7 @@ function AppearanceGroup() {
   );
 }
 
-function AssistantGroup() {
+function ReceptionistGroup() {
   const [status, setStatus] = useState(null);
   const [probing, setProbing] = useState(false);
   useEffect(() => {
@@ -310,10 +311,10 @@ function AssistantGroup() {
 
   return (
     <Group
-      id="assistant"
+      id="receptionist"
       icon={Bot}
-      title="Assistant"
-      subtitle="Ask DocDesk questions or have it make changes in plain English."
+      title={brand.receptionist}
+      subtitle="Ask it questions or have it make changes in plain English."
       tint="#ff375f"
       action={status?.configured && <Button variant="secondary" size="sm" icon={RefreshCw} loading={probing} onClick={probe}>Test</Button>}
     >
@@ -417,7 +418,7 @@ function ShortcutsGroup() {
   const shortcuts = [
     [[mod, 'K'], 'Search everything and jump anywhere'],
     [['/'], 'Search, when not typing in a field'],
-    [[mod, 'J'], 'Open the assistant'],
+    [[mod, 'J'], `Open ${brand.receptionist}`],
     [['Esc'], 'Close the top dialog or panel'],
     [['←', '→'], 'Move through a segmented control or chart'],
   ];

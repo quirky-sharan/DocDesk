@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { api, receiptPdfUrl } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import { useSettings } from '../lib/settings';
 import { useShell } from '../components/shell/ShellProvider';
 import {
@@ -52,7 +52,7 @@ export default function SalesPage() {
   const fetcher = useCallback((p) => api.sales.list(p), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { payment_status: status, from, to } });
 
-  useAssistantView('sales', list, { payment_status: setStatus, from: setFrom, to: setTo }, { defaultSort: 'created_at', defaultDir: 'desc' });
+  useReceptionistView('sales', list, { payment_status: setStatus, from: setFrom, to: setTo }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   const loadKpis = useCallback(async () => {
     const [pulse, month] = await Promise.all([api.reports.pulse(), api.reports.summary({ days: 30 })]);

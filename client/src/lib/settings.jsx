@@ -10,7 +10,7 @@ const DEFAULTS = { business_name: 'DocDesk', currency_symbol: '', default_tax_ra
 /**
  * The shop's details, loaded once and shared: the name in the top bar, the
  * currency symbol on every amount, the tax rate on new sales. Re-read whenever
- * something (a form or the assistant) changes settings.
+ * something (a form or the receptionist) changes settings.
  */
 export function SettingsProvider({ children }) {
   const [values, setValues] = useState(DEFAULTS);

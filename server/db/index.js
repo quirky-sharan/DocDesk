@@ -14,7 +14,7 @@ const monitor = require('./monitor');
  * On top of the engine this adds three things every caller gets for free:
  *   - transactions that follow the call stack (AsyncLocalStorage), so a helper
  *     called inside a transaction joins it instead of deadlocking or escaping it
- *   - the "actor" (web / assistant / sql-console / system) recorded against
+ *   - the "actor" (web / receptionist / sql-console / system) recorded against
  *     every change by the audit triggers
  *   - timing for every statement, for the Database page's performance view
  */

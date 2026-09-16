@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 
+const brand = require('../shared/brand.json');
 const db = require('./db');
 const { migrate, listTables } = require('./db/migrate');
 const { importLegacySqlite } = require('./db/legacy/importSqlite');
@@ -30,10 +31,15 @@ app.use('/api', async (req, res, next) => {
   }
 });
 
-// Who is making changes, for the audit trail: the assistant calls the API with
-// this header; everything else is a person using the app.
+// Who is making changes, for the audit trail: Receptionist AI calls the API
+// with this header; everything else is a person using the app.
+//
+// "assistant" is what it sent before the Phase 7 rename. It is still accepted so
+// an old process talking to a new server is attributed correctly rather than
+// silently recorded as a person - but what gets written is always the new name.
 app.use('/api', (req, res, next) => {
-  const actor = req.get('x-docdesk-actor') === 'assistant' ? 'assistant' : 'web';
+  const claimed = req.get('x-docdesk-actor');
+  const actor = claimed === brand.actor || claimed === brand.legacyActor ? brand.actor : 'web';
   db.runAs(actor, () => next());
 });
 

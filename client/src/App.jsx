@@ -9,8 +9,8 @@ import { SmoothScrollProvider, useSmoothScroll } from './components/shell/Smooth
 import { SpotlightProvider } from './components/spotlight/SpotlightProvider';
 import { ToastProvider } from './components/ui/Toast';
 import { SettingsProvider } from './lib/settings';
-import { AssistantProvider, useAssistant } from './assistant/AssistantProvider';
-import AssistantPanel, { AssistantLauncher } from './assistant/AssistantPanel';
+import { ReceptionistProvider, useReceptionist } from './receptionist/ReceptionistProvider';
+import ReceptionistPanel, { ReceptionistLauncher } from './receptionist/ReceptionistPanel';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { Mark } from './components/landing/Wordmark';
 import LandingPage from './pages/LandingPage';
@@ -74,7 +74,7 @@ export default function App() {
 /**
  * Decides which of the two apps is running: the public one (a landing page) or
  * the private one (the front desk). Everything the product needs - settings,
- * the assistant, the spotlight, the shell - is mounted only on the private
+ * the receptionist, the spotlight, the shell - is mounted only on the private
  * side, so a visitor who never signs in never triggers an API call.
  */
 function Gate() {
@@ -97,13 +97,13 @@ function Gate() {
     <SettingsProvider>
       <ToastProvider>
         <SmoothScrollProvider>
-          <AssistantProvider>
+          <ReceptionistProvider>
             <SpotlightProvider>
               <ShellProvider>
                 <Shell />
               </ShellProvider>
             </SpotlightProvider>
-          </AssistantProvider>
+          </ReceptionistProvider>
         </SmoothScrollProvider>
       </ToastProvider>
     </SettingsProvider>
@@ -111,7 +111,7 @@ function Gate() {
 }
 
 function Shell() {
-  const { open } = useAssistant();
+  const { open } = useReceptionist();
   const { collapsed } = useShell();
   const { scrollerRef, contentRef } = useSmoothScroll();
   const location = useLocation();
@@ -129,7 +129,7 @@ function Shell() {
       >
         <div ref={contentRef}>
           <TopBar />
-          {/* On wide screens the page makes room for the assistant instead of
+          {/* On wide screens the page makes room for the receptionist instead of
               hiding under it, so you can watch it work on the list. */}
           <div className={cn('mx-auto max-w-[1360px] px-4 pb-32 pt-2 transition-[margin] duration-500 ease-out-expo sm:px-8', open && 'xl:mr-[460px]')}>
             <motion.div
@@ -158,8 +158,8 @@ function Shell() {
           </div>
         </div>
       </main>
-      <AssistantLauncher />
-      <AssistantPanel />
+      <ReceptionistLauncher />
+      <ReceptionistPanel />
     </div>
   );
 }

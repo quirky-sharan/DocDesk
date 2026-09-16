@@ -162,7 +162,7 @@ async function runTurn({ messages: incoming, userText, page, continuation, maxWa
     model = result.model;
     const message = result.message;
     if (result.usage) {
-      console.log(`[assistant] step ${step + 1} ${result.model} ${result.usage.prompt_tokens}+${result.usage.completion_tokens} tokens ${result.latencyMs}ms`);
+      console.log(`[receptionist] step ${step + 1} ${result.model} ${result.usage.prompt_tokens}+${result.usage.completion_tokens} tokens ${result.latencyMs}ms`);
     }
     history.push(cleanAssistantMessage(message));
 
@@ -214,7 +214,7 @@ async function runTurn({ messages: incoming, userText, page, continuation, maxWa
         // call or ask the user, rather than ending the conversation.
         const known = err instanceof ToolError || err.status;
         content = { ok: false, error: known ? err.message : 'That step failed unexpectedly.' };
-        if (!known) console.error(`[assistant] ${name} failed:`, err);
+        if (!known) console.error(`[receptionist] ${name} failed:`, err);
         activity.push({ tool: name, state: 'failed', label: content.error });
       }
 
@@ -305,7 +305,7 @@ async function confirmAction({ id, messages, page, openIds }) {
     // waiting for the AI to phrase a follow-up.
     turn = await runTurn({ messages, page, continuation: note, maxWaitMs: 4000 });
   } catch (err) {
-    console.warn(`[assistant] follow-up after confirm skipped: ${err.message}`);
+    console.warn(`[receptionist] follow-up after confirm skipped: ${err.message}`);
     const history = sanitiseIncoming(messages);
     history.push({ role: 'user', content: note });
     history.push({ role: 'assistant', content: outcome.message });

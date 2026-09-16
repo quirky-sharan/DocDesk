@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, ArrowUpRight, BellRing, CheckCircle2, Clock, Inbox, Mail, MessageSquare, PackageX, Send, Smartphone, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import { useSettings } from '../lib/settings';
 import { Badge, Button, ConfirmButton, Empty, ErrorNote, ExportMenu, Notice, PageHeader, Pagination, SearchInput, SegmentedControl, useToast } from '../components/ui';
 import { formatDate, formatDateTime, formatRelative, formatTime, parseDate } from '../lib/format';
@@ -44,7 +44,7 @@ export default function MessagesPage() {
 
   const fetcher = useCallback((p) => api.messages.list(p), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { status }, pageSize: 30 });
-  useAssistantView('message_log', list, { status: setStatus }, { defaultSort: 'created_at', defaultDir: 'desc' });
+  useReceptionistView('message_log', list, { status: setStatus }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   useEffect(() => {
     Promise.all(['queued', 'sent', 'failed'].map((s) => api.messages.list({ status: s, pageSize: 1 }).then((d) => [s, d.total])))

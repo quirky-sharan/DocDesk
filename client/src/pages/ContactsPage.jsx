@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Building2, Copy, History, Mail, Pencil, Phone, Receipt, ShoppingBag, Trash2, TrendingUp, UserPlus, Users, Wallet } from 'lucide-react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import { useSettings } from '../lib/settings';
 import {
   Avatar, Badge, Button, ConfirmButton, ErrorNote, ExportMenu, Field, Modal, PageHeader, Pagination, SearchInput,
@@ -47,7 +47,7 @@ export default function ContactsPage({ kind }) {
 
   const fetcher = useCallback((p) => resource.list(p), [resource]);
   const list = useList(fetcher, { initialSort: config.sort });
-  useAssistantView(kind, list, {}, { defaultSort: config.sort });
+  useReceptionistView(kind, list, {}, { defaultSort: config.sort });
 
   useEffect(() => {
     const history = params.get('history');

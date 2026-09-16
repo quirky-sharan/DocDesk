@@ -8,7 +8,9 @@ import { formatDateTime, formatNumber, formatRelative } from '../../lib/format';
 import { cn } from '../../lib/cn';
 
 const ACTION = { INSERT: { label: 'Created', tone: 'green' }, UPDATE: { label: 'Changed', tone: 'blue' }, DELETE: { label: 'Deleted', tone: 'red' } };
-const ACTORS = { web: 'you, in the app', assistant: 'the assistant', 'sql-console': 'the SQL console', 'sample-data': 'sample data', import: 'the import', system: 'the system' };
+// `assistant` is the pre-Phase-7 name for the same actor; both read through
+// to one label so history stays legible without rewriting any rows.
+const ACTORS = { web: 'you, in the app', receptionist: 'Receptionist AI', assistant: 'Receptionist AI', 'sql-console': 'the SQL console', 'sample-data': 'sample data', import: 'the import', system: 'the system' };
 
 function show(value) {
   if (value === null || value === undefined) return null;

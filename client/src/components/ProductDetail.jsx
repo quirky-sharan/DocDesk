@@ -20,7 +20,7 @@ const KIND = {
   import: { label: 'Imported', icon: Upload },
 };
 
-const ACTORS = { web: 'You', assistant: 'Assistant', 'sql-console': 'SQL console', import: 'Import', system: 'DocDesk', 'sample-data': 'Sample data', 'integrity-check': 'Integrity check', restore: 'Restore' };
+const ACTORS = { web: 'You', receptionist: 'Receptionist AI', assistant: 'Receptionist AI', 'sql-console': 'SQL console', import: 'Import', system: 'DocDesk', 'sample-data': 'Sample data', 'integrity-check': 'Integrity check', restore: 'Restore' };
 
 /** Everything about one product: how it sells, its stock ledger, what's on order and every change made to it. */
 export default function ProductDetail({ productId, onClose, onEdit, onAdjust }) {
@@ -199,7 +199,8 @@ export default function ProductDetail({ productId, onClose, onEdit, onAdjust }) 
 }
 
 export function ChangeEntry({ entry }) {
-  const ActorIcon = entry.actor === 'assistant' ? Bot : entry.actor === 'sql-console' ? Database : entry.actor === 'web' ? UserRound : PackageCheck;
+  const isReceptionist = entry.actor === 'receptionist' || entry.actor === 'assistant';
+  const ActorIcon = isReceptionist ? Bot : entry.actor === 'sql-console' ? Database : entry.actor === 'web' ? UserRound : PackageCheck;
   const fields = entry.action === 'UPDATE' ? entry.changed_fields || [] : [];
   const show = (value) => (value === null || value === undefined || value === '' ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value));
   return (

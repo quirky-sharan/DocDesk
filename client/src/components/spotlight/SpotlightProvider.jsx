@@ -6,7 +6,7 @@ const SpotlightContext = createContext(null);
 
 /**
  * Ctrl+K (or Cmd+K) anywhere opens Spotlight: jump to a page, run an action,
- * find a product or customer, or hand the sentence straight to the assistant.
+ * find a product or customer, or hand the sentence straight to the receptionist.
  */
 export function SpotlightProvider({ children }) {
   const [state, setState] = useState({ open: false, query: '' });

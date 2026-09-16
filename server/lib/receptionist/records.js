@@ -3,7 +3,7 @@ const api = require('./internalApi');
 class ToolError extends Error {}
 
 /**
- * Everything the assistant needs to know about each table: where its API lives,
+ * Everything the receptionist needs to know about each table: where its API lives,
  * which page shows it, and which fields a person would use to name a row.
  */
 const TABLE_META = {

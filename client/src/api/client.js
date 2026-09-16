@@ -136,10 +136,10 @@ export const api = {
   ai: {
     status: (probe = false) => request(`/ai/status${probe ? '?probe=1' : ''}`),
   },
-  assistant: {
-    message: (payload) => send('/assistant/message', 'POST', payload),
-    confirm: (payload) => send('/assistant/confirm', 'POST', payload),
-    cancel: (id) => send('/assistant/cancel', 'POST', { id }),
+  receptionist: {
+    message: (payload) => send('/receptionist/message', 'POST', payload),
+    confirm: (payload) => send('/receptionist/confirm', 'POST', payload),
+    cancel: (id) => send('/receptionist/cancel', 'POST', { id }),
   },
   settings: {
     get: () => request('/settings'),

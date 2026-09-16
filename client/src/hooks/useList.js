@@ -73,7 +73,7 @@ export function useList(fetcher, { initialSort, initialDir = 'asc', filters = {}
   return {
     rows, meta, loading, error, setError,
     search, setSearch,
-    // setSort/setDir are exposed so the assistant can drive sorting directly,
+    // setSort/setDir are exposed so the receptionist can drive sorting directly,
     // not just the column headers.
     sort, dir, toggleSort, setSort, setDir,
     page, setPage,

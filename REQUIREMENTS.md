@@ -16,14 +16,14 @@ Restart the server after editing it.
 
 ---
 
-## 1. AI assistant — worth doing now
+## 1. Receptionist AI — worth doing now
 
-**What it unlocks:** the assistant on every page (**Ask DocDesk**, or
+**What it unlocks:** the receptionist on every page (**Ask Receptionist**, or
 **Ctrl+J**). It can look things up, sort and filter your lists, record sales,
 add, change or delete records, order and receive stock, run reports, back up
 the database and export files. Every change waits for you to click Confirm.
 
-**Without a key** the rest of DocDesk works normally and the assistant says it
+**Without a key** the rest of DocDesk works normally and the receptionist says it
 isn't connected.
 
 ### Get a Groq key — 2 minutes, free, no card
@@ -39,7 +39,7 @@ GROQ_API_KEY=gsk_paste_your_key_here
 ```
 
 5. Run `stop_all.bat`, then `start_all.bat`. The launcher prints
-   **"AI assistant connected"** when it's working.
+   **"Receptionist AI connected"** when it's working.
 
 > **If you ever paste your key into a chat, email or screenshot, rotate it:** go
 > to console.groq.com/keys, delete that key, create a new one, and put the new one
@@ -80,10 +80,10 @@ breaking.
 
 ### What "busy" means
 
-One assistant answer costs about 2,000–3,000 tokens per step, and a question that
+One receptionist answer costs about 2,000–3,000 tokens per step, and a question that
 needs a lookup takes two steps. At a normal typing pace that's comfortably within
 the free allowance. If you fire off several requests in a few seconds, the
-assistant shows *"Waiting for the free AI allowance…"* and carries on once
+receptionist shows *"Waiting for the free AI allowance…"* and carries on once
 there's room — usually within 10–20 seconds. It only gives up if every model is
 busy for longer than that, and then it says so.
 

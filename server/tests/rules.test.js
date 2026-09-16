@@ -287,14 +287,14 @@ test('every edit bumps the row version, so two people cannot overwrite each othe
 
 test('inserts, updates and deletes are all recorded, with who did them', async () => {
   const product = await db.runAs('tester', () => makeProduct({ name: 'Audited', stock: 0 }));
-  await db.runAs('assistant', () => db.query('UPDATE products SET sale_price = 99 WHERE id = $1', [product.id]));
+  await db.runAs('receptionist', () => db.query('UPDATE products SET sale_price = 99 WHERE id = $1', [product.id]));
   await db.runAs('web', () => db.query('DELETE FROM products WHERE id = $1', [product.id]));
 
   const { rows } = await db.query(
     "SELECT action, actor, changed_fields, old_data, new_data FROM audit_log WHERE table_name = 'products' ORDER BY id"
   );
   assert.deepEqual(rows.map((r) => r.action), ['INSERT', 'UPDATE', 'DELETE']);
-  assert.deepEqual(rows.map((r) => r.actor), ['tester', 'assistant', 'web']);
+  assert.deepEqual(rows.map((r) => r.actor), ['tester', 'receptionist', 'web']);
   assert.ok(rows[1].changed_fields.includes('sale_price'));
   assert.equal(Number(rows[1].old_data.sale_price), 15);
   assert.equal(Number(rows[1].new_data.sale_price), 99);

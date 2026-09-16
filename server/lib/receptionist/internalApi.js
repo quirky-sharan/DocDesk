@@ -1,12 +1,13 @@
 /**
- * The assistant acts through DocDesk's own HTTP API rather than touching the
+ * Receptionist AI acts through DocDesk's own HTTP API rather than touching the
  * database directly.
  *
  * That is deliberate: every validation rule, transaction, stock movement and
  * low-stock trigger already lives behind those routes. Going through them means
- * the assistant can never do anything a person clicking the buttons couldn't,
+ * the receptionist can never do anything a person clicking the buttons couldn't,
  * and a rule added to the API later automatically applies to it too.
  */
+const brand = require('../../../shared/brand.json');
 
 function baseUrl() {
   const port = Number(process.env.PORT) || 5000;
@@ -33,8 +34,8 @@ function query(params = {}) {
 async function call(method, path, { body, params } = {}) {
   const response = await fetch(`${baseUrl()}${path}${query(params)}`, {
     method,
-    // Marks the change as the assistant's in the database's audit trail.
-    headers: { 'x-docdesk-actor': 'assistant', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    // Marks the change as the receptionist's in the database's audit trail.
+    headers: { 'x-docdesk-actor': brand.actor, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20000),
   });

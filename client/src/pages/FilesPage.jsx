@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { api, fileContentUrl } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import {
   Badge, Button, ConfirmButton, Empty, ErrorNote, ExportMenu, Field, Modal, PageHeader, Pagination, SearchInput,
   SegmentedControl, Table, useToast,
@@ -43,7 +43,7 @@ export default function FilesPage() {
 
   const fetcher = useCallback((p) => api.files.list(p), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { kind }, pageSize: 24 });
-  useAssistantView('files', list, { kind: setKind }, { defaultSort: 'created_at', defaultDir: 'desc' });
+  useReceptionistView('files', list, { kind: setKind }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   useEffect(() => {
     api.files.info().then(setInfo).catch(() => {});

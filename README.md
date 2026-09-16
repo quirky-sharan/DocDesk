@@ -23,7 +23,7 @@ install, no accounts to create, no keys.
 
 It checks Node, installs packages the first time (and again whenever they
 change), starts the API — which prepares the database on its own — starts the
-web app, confirms the AI assistant is connected, and opens the browser. Run it
+web app, confirms Receptionist AI is connected, and opens the browser. Run it
 again while DocDesk is already up and it just reuses what's running.
 
 To stop everything, double-click **`stop_all.bat`**. It asks the API to close the
@@ -80,14 +80,14 @@ the same data folder.
 ### The database keeps itself correct
 
 The rules live in the database, not just the app, so they hold no matter what
-writes to it — a page, the assistant, or someone typing SQL.
+writes to it — a page, Receptionist AI, or someone typing SQL.
 
 - **Versioned migrations** (`server/db/migrations/001…006`), checksummed and applied in order on start.
 - **Foreign keys and CHECK constraints** — stock can't go negative, a payment can't exceed what's owed, a sale's total must equal its lines.
 - **A stock ledger.** Every stock change is a row in `stock_movements`; a trigger keeps each product's balance in step, inside the same transaction.
 - **Payments drive status.** A sale is paid, part paid or unpaid because of the payments recorded against it, worked out by a trigger.
 - **Low-stock alerts** are raised by a trigger the moment stock crosses the reorder level.
-- **Audit trail.** A generic trigger records the before and after of every insert, update and delete, with who made it (you, the assistant, the SQL console).
+- **Audit trail.** A generic trigger records the before and after of every insert, update and delete, with who made it (you, Receptionist AI, the SQL console).
 - **Optimistic locking.** Each edit checks a row version, so two people can't silently overwrite each other.
 - **Reporting views and functions** (`v_sales`, `report_sales_by_day`, …) and trigram indexes for typo-tolerant search.
 - **Backups.** One compressed file with every record; made daily automatically on the embedded engine and restorable in one transaction.
@@ -162,10 +162,10 @@ Changes need **Allow changes** switched on, and on a hosted database that switch
 is off unless `DB_ADMIN=on`.
 
 **Settings** — business details with a live receipt preview, currency and tax,
-the business timezone (reports count days in it), appearance, assistant status,
+the business timezone (reports count days in it), appearance, Receptionist AI status,
 and sample data.
 
-**The assistant** — a receptionist on every page. Press **Ctrl+J** or click the
+**Receptionist AI** — the front desk on every page. Press **Ctrl+J** or click the
 orb, and ask or tell it anything:
 
 - *"How are we doing today?"* · *"What needs reordering?"*
@@ -182,8 +182,8 @@ to confirm. It needs a free Groq key — see `REQUIREMENTS.md`.
 
 | Keys | |
 |---|---|
-| **Ctrl+K** or **/** | search everything — typo-tolerant — and jump anywhere; type a sentence to hand it to the assistant |
-| **Ctrl+J** | open the assistant |
+| **Ctrl+K** or **/** | search everything — typo-tolerant — and jump anywhere; type a sentence to hand it to Receptionist AI |
+| **Ctrl+J** | open Receptionist AI |
 | **Ctrl+Enter** | run the query in the SQL console |
 | **Esc** | close the top dialog or panel |
 
@@ -204,7 +204,7 @@ Run these from `server/`.
 | `npm run seed` | load the sample data into an empty database |
 | `npm run seed:clear` | delete all business records |
 | `npm test` | run the database rules against a throwaway database (never your data) |
-| `npm run bench:ai` | score the assistant against real requests |
+| `npm run bench:ai` | score Receptionist AI against real requests |
 
 ## API
 
@@ -225,7 +225,7 @@ Run these from `server/`.
 | `GET /api/db/activity`, `/history/:table/:id`, `/performance` | audit trail and monitoring |
 | `GET /api/db/integrity` · `POST …/:id/fix` | integrity checks and repairs |
 | `GET/POST /api/db/backups` · `POST /api/db/restore` · `GET /api/db/export.sql` | backups |
-| `POST /api/assistant/message` · `/confirm` · `/cancel` | the assistant |
+| `POST /api/receptionist/message` · `/confirm` · `/cancel` | Receptionist AI |
 | `GET /api/export/:table?format=` | csv, xlsx, json or pdf |
 | `GET/POST /api/files` · `GET /api/messages` · `GET/PUT /api/settings` | the rest |
 

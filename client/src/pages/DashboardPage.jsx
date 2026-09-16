@@ -10,7 +10,7 @@ import { useDataChanged } from '../hooks/useDataChanged';
 import { useTheme } from '../hooks/useTheme';
 import { useMeasure } from '../hooks/useMeasure';
 import { useSettings } from '../lib/settings';
-import { useAssistant } from '../assistant/AssistantProvider';
+import { useReceptionist } from '../receptionist/ReceptionistProvider';
 import { Avatar, Badge, Button, Card, CardHeader, ErrorNote, SegmentedControl, useToast } from '../components/ui';
 import { AreaChart, ColumnChart, HorizontalBars, Meter, Rings, RingsLegend, ShareBar, StatTile } from '../components/charts';
 import { Reveal, RevealGroup, RevealItem } from '../components/motion/Reveal';
@@ -19,6 +19,7 @@ import Scene3D from '../components/three/Scene3D';
 import AppIcon from '../components/shell/AppIcon';
 import { formatDate, formatRelative, greeting } from '../lib/format';
 import { EASE_OUT } from '../lib/motion';
+import brand from '@shared/brand.json';
 
 const loadSkyline = () => import('../components/three/RevenueSkyline3D');
 
@@ -66,7 +67,7 @@ export default function DashboardPage() {
     api.reports.salesByDay({ days: range }).then((d) => setSeries(d.series)).catch(() => {});
   }, [range]);
 
-  // Changes made through the assistant show up here without a reload.
+  // Changes made through the receptionist show up here without a reload.
   useDataChanged(() => load());
 
   const isEmpty = data && data.summary.total === 0 && data.salesTotal === 0;
@@ -130,7 +131,7 @@ export default function DashboardPage() {
 
 function Hero({ data, loading, onRefresh }) {
   const { businessName, compactMoney } = useSettings();
-  const assistant = useAssistant();
+  const receptionist = useReceptionist();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -176,7 +177,7 @@ function Hero({ data, loading, onRefresh }) {
       </div>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.15, ease: EASE_OUT }} className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" icon={RefreshCw} onClick={onRefresh} loading={loading} aria-label="Refresh" />
-        <Button variant="secondary" icon={Sparkles} onClick={() => assistant.setOpen(true)}>Ask DocDesk</Button>
+        <Button variant="secondary" icon={Sparkles} onClick={() => receptionist.setOpen(true)}>Ask {brand.receptionistShort}</Button>
         <Link to="/sales?new=1" className="btn-primary">
           <Receipt size={16} /> New sale
         </Link>
@@ -189,7 +190,7 @@ function SkylineCard({ data, className }) {
   const { isDark } = useTheme();
   const { money, compactMoney } = useSettings();
   const [cardRef, { width }] = useMeasure();
-  // Fewer, larger columns when the card is narrow (a phone, or the assistant open).
+  // Fewer, larger columns when the card is narrow (a phone, or the receptionist open).
   const days = data.byDay.slice(width && width < 760 ? -14 : -21);
   const sceneData = days.map((d) => ({ key: d.day, value: d.revenue, sales: d.saleCount }));
   const week = data.pulse.thisWeek;
@@ -419,7 +420,8 @@ function RestockCard({ summary }) {
 
 const ACTOR = {
   web: { label: 'You', icon: UserRound },
-  assistant: { label: 'Assistant', icon: Bot },
+  receptionist: { label: 'Receptionist AI', icon: Bot },
+  assistant: { label: 'Receptionist AI', icon: Bot },
   'sql-console': { label: 'SQL console', icon: Database },
   import: { label: 'Import', icon: Upload },
   restore: { label: 'Restore', icon: History },
@@ -443,7 +445,7 @@ function ActivityCard({ activity }) {
         <CardHeader className="mb-0" title="Recent activity" subtitle="Every change is recorded by the database." icon={History} action={<Link to="/database?tab=activity" className="inline-flex items-center gap-1 text-[13px] font-medium text-accent-ink hover:underline">Activity log <ArrowRight size={13} /></Link>} />
       </div>
       {activity.length === 0 ? (
-        <p className="px-6 pb-8 pt-2 text-[13.5px] text-ink-3">Changes you and the assistant make will appear here.</p>
+        <p className="px-6 pb-8 pt-2 text-[13.5px] text-ink-3">Changes you and {brand.receptionist} make will appear here.</p>
       ) : (
         <ol className="relative px-6 pb-5">
           <span className="absolute bottom-7 left-[39px] top-3 w-px" style={{ background: 'var(--line)' }} aria-hidden="true" />

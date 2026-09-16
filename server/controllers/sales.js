@@ -153,7 +153,7 @@ exports.create = async (req, res, next) => {
 
 /**
  * Settling up. Kept compatible with "set the payment status" callers (the
- * list's Mark paid, the assistant) by translating a status into the payment
+ * list's Mark paid, the receptionist) by translating a status into the payment
  * that makes it true: paid records the balance, part-paid records `amount`,
  * refunded records a refund of what was paid, unpaid clears the payments.
  */

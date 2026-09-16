@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 
 /**
- * A deliberately small Markdown renderer for assistant replies.
+ * A deliberately small Markdown renderer for the receptionist's replies.
  *
  * It builds React elements and never uses innerHTML, so nothing a model writes -
  * or a product name it quotes back - can inject markup or script into the page.
@@ -161,5 +161,5 @@ export default function Markdown({ text }) {
     );
   }
 
-  return <div className="assistant-markdown">{blocks}</div>;
+  return <div className="receptionist-markdown">{blocks}</div>;
 }

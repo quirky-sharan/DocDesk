@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { api, exportUrl } from '../../api/client';
 import { NAV } from '../shell/Sidebar';
-import { useAssistant } from '../../assistant/AssistantProvider';
+import { useReceptionist } from '../../receptionist/ReceptionistProvider';
 import { useTheme } from '../../hooks/useTheme';
 import { useEscapeLayer, useFocusTrap } from '../../hooks/useLayer';
 import { useScrollLock } from '../shell/SmoothScroll';
@@ -17,6 +17,7 @@ import Spinner from '../ui/Spinner';
 import Avatar from '../ui/Avatar';
 import { cn } from '../../lib/cn';
 import { spring, springSoft } from '../../lib/motion';
+import brand from '@shared/brand.json';
 
 const PAGE_KEYWORDS = {
   '/': 'home overview today summary',
@@ -45,7 +46,7 @@ function score(text, query) {
 
 export default function Spotlight({ initialQuery = '', onClose }) {
   const navigate = useNavigate();
-  const assistant = useAssistant();
+  const receptionist = useReceptionist();
   const { isDark, setMode } = useTheme();
   const { money } = useSettings();
   const panelRef = useRef(null);
@@ -112,8 +113,8 @@ export default function Spotlight({ initialQuery = '', onClose }) {
 
     if (q) {
       list.push({
-        id: 'ask', group: 'Ask DocDesk', label: `“${q}”`, orb: true, meta: 'Let the assistant do it or answer it',
-        run: () => assistant.send(q),
+        id: 'ask', group: `Ask ${brand.receptionistShort}`, label: `“${q}”`, orb: true, meta: `Let ${brand.receptionist} do it or answer it`,
+        run: () => receptionist.send(q),
       });
     }
 
@@ -153,10 +154,10 @@ export default function Spotlight({ initialQuery = '', onClose }) {
     if (q) list.push(...records.items, ...actions, ...pages);
     else {
       list.push(...actions, ...pages);
-      list.push(...EXAMPLES.map((text) => ({ id: `ex-${text}`, group: 'Try asking', label: text, orb: true, run: () => assistant.send(text) })));
+      list.push(...EXAMPLES.map((text) => ({ id: `ex-${text}`, group: 'Try asking', label: text, orb: true, run: () => receptionist.send(text) })));
     }
     return list;
-  }, [query, records.items, assistant, navigate, isDark, setMode]);
+  }, [query, records.items, receptionist, navigate, isDark, setMode]);
 
   useEffect(() => setActive(0), [query]);
 

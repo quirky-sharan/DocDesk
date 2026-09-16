@@ -1,4 +1,4 @@
-const { runTurn, confirmAction, cancelAction } = require('../lib/assistant/agent');
+const { runTurn, confirmAction, cancelAction } = require('../lib/receptionist/agent');
 const { status } = require('../lib/llm');
 const { badRequest } = require('../lib/tables');
 

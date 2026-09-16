@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowUp } from 'lucide-react';
 import { gsap, playWhenVisible, reduced, useGsap } from '../../lib/gsap';
 import { Mark } from './Wordmark';
+import brand from '@shared/brand.json';
 
 /**
  * The footer is a real sitemap - every link goes to a page that exists. Anything
@@ -34,7 +35,7 @@ const COLUMNS = [
       { label: 'Reports', to: '/reports' },
       { label: 'Database console', to: '/database' },
       { label: 'Settings', to: '/settings' },
-      { label: 'The assistant', href: '#assistant' },
+      { label: brand.receptionist, href: '#receptionist' },
     ],
   },
   {

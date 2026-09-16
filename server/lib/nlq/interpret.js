@@ -161,7 +161,7 @@ async function interpret(table, request) {
     const guess = ruleBased(trimmed, columns);
     if (!guess) {
       const err = new Error(
-        'The AI assistant is not connected yet, so only simple requests like "sort by price" or "add a column for expiry date" work. See REQUIREMENTS.md for how to switch it on.'
+        'Receptionist AI is not connected yet, so only simple requests like "sort by price" or "add a column for expiry date" work. See REQUIREMENTS.md for how to switch it on.'
       );
       err.status = 503;
       throw err;

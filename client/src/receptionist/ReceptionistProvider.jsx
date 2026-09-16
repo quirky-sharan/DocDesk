@@ -4,12 +4,16 @@ import { api, apiUrl } from '../api/client';
 import { announceDataChanged } from '../hooks/useDataChanged';
 import { hasOpenLayer } from '../hooks/useLayer';
 
-const AssistantContext = createContext(null);
-const STORAGE_KEY = 'docdesk.assistant.v1';
+const ReceptionistContext = createContext(null);
+const STORAGE_KEY = 'docdesk.receptionist.v1';
+// What the key was called before the Phase 7 rename. Read once so a conversation
+// open across the upgrade is not thrown away mid-sentence.
+const LEGACY_STORAGE_KEY = 'docdesk.assistant.v1';
 
 function load() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+    const raw = sessionStorage.getItem(STORAGE_KEY) ?? sessionStorage.getItem(LEGACY_STORAGE_KEY);
+    const saved = JSON.parse(raw || 'null');
     if (saved && Array.isArray(saved.entries) && Array.isArray(saved.history)) return saved;
   } catch {
     // Unreadable storage just means a fresh conversation.
@@ -20,7 +24,7 @@ function load() {
 let counter = 0;
 const nextId = () => `${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
-export function AssistantProvider({ children }) {
+export function ReceptionistProvider({ children }) {
   const initial = useMemo(load, []);
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState(initial.entries);
@@ -57,8 +61,8 @@ export function AssistantProvider({ children }) {
     }
   }, [entries, cards]);
 
-  // Ctrl/Cmd+K belongs to Spotlight, which hands sentences to the assistant.
-  // Ctrl/Cmd+J opens the assistant directly; Escape closes it when nothing
+  // Ctrl/Cmd+K belongs to Spotlight, which hands sentences to the receptionist.
+  // Ctrl/Cmd+J opens the receptionist directly; Escape closes it when nothing
   // (a dialog, a popover, Spotlight) is layered on top.
   useEffect(() => {
     function onKey(e) {
@@ -161,7 +165,7 @@ export function AssistantProvider({ children }) {
       setEntries((current) => [...current, { id: nextId(), role: 'user', text: trimmed, at: Date.now() }]);
       startBusy();
       try {
-        absorb(await api.assistant.message({ text: trimmed, messages: history.current, page: pathRef.current }));
+        absorb(await api.receptionist.message({ text: trimmed, messages: history.current, page: pathRef.current }));
       } catch (err) {
         setEntries((current) => [
           ...current,
@@ -182,7 +186,7 @@ export function AssistantProvider({ children }) {
       startBusy();
       const openIds = Object.values(cards).filter((c) => c.state === 'open' && c.id !== id).map((c) => c.id);
       try {
-        const response = await api.assistant.confirm({ id, messages: history.current, page: pathRef.current, openIds });
+        const response = await api.receptionist.confirm({ id, messages: history.current, page: pathRef.current, openIds });
         const ok = response.confirmed?.ok;
         setCards((current) => ({
           ...current,
@@ -206,7 +210,7 @@ export function AssistantProvider({ children }) {
     (id) => {
       const card = cards[id];
       if (!card || card.state !== 'open') return;
-      api.assistant.cancel(id).catch(() => {});
+      api.receptionist.cancel(id).catch(() => {});
       setCards((current) => ({ ...current, [id]: { ...current[id], state: 'cancelled' } }));
       // Tell the model, so a later "go ahead" isn't read as permission for this.
       history.current = [
@@ -220,7 +224,7 @@ export function AssistantProvider({ children }) {
 
   const reset = useCallback(() => {
     for (const card of Object.values(cards)) {
-      if (card.state === 'open') api.assistant.cancel(card.id).catch(() => {});
+      if (card.state === 'open') api.receptionist.cancel(card.id).catch(() => {});
     }
     history.current = [];
     setEntries([]);
@@ -233,11 +237,11 @@ export function AssistantProvider({ children }) {
     openCount: Object.values(cards).filter((c) => c.state === 'open').length,
   };
 
-  return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
+  return <ReceptionistContext.Provider value={value}>{children}</ReceptionistContext.Provider>;
 }
 
-export function useAssistant() {
-  const context = useContext(AssistantContext);
-  if (!context) throw new Error('useAssistant must be used inside AssistantProvider');
+export function useReceptionist() {
+  const context = useContext(ReceptionistContext);
+  if (!context) throw new Error('useReceptionist must be used inside ReceptionistProvider');
   return context;
 }

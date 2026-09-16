@@ -8,7 +8,7 @@ export function announceDataChanged(tables = []) {
 }
 
 /**
- * Re-run a callback when the assistant (or anything else) changes data.
+ * Re-run a callback when the receptionist (or anything else) changes data.
  * Pass the tables this view shows, or nothing to react to every change.
  */
 export function useDataChanged(callback, tables) {

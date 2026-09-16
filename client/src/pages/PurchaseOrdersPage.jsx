@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Ban, CalendarClock, ClipboardList, Minus, PackageCheck, Plus, Sparkles, Trash2, Truck, X } from 'lucide-react';
 import { api } from '../api/client';
 import { useList } from '../hooks/useList';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import { useSettings } from '../lib/settings';
 import { useShell } from '../components/shell/ShellProvider';
 import {
@@ -42,7 +42,7 @@ export default function PurchaseOrdersPage() {
 
   const fetcher = useCallback((p) => api.purchaseOrders.list(p), []);
   const list = useList(fetcher, { initialSort: 'created_at', initialDir: 'desc', filters: { status } });
-  useAssistantView('purchase_orders', list, { status: setStatus }, { defaultSort: 'created_at', defaultDir: 'desc' });
+  useReceptionistView('purchase_orders', list, { status: setStatus }, { defaultSort: 'created_at', defaultDir: 'desc' });
 
   const loadAside = useCallback(async () => {
     const [suggestion, open, partial] = await Promise.all([

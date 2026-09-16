@@ -9,11 +9,12 @@ import Tooltip from '../ui/Tooltip';
 import { useShell } from './ShellProvider';
 import { useSettings } from '../../lib/settings';
 import { useTheme } from '../../hooks/useTheme';
-import { useAssistant } from '../../assistant/AssistantProvider';
+import { useReceptionist } from '../../receptionist/ReceptionistProvider';
 import { cn } from '../../lib/cn';
 import { spring, springSoft } from '../../lib/motion';
 import { useScrollLock } from './SmoothScroll';
 import { useEscapeLayer } from '../../hooks/useLayer';
+import brand from '@shared/brand.json';
 
 export const NAV = [
   {
@@ -230,13 +231,13 @@ function NavItem({ item, collapsed, badge }) {
 }
 
 function AskCard({ collapsed }) {
-  const assistant = useAssistant();
-  const busy = assistant.busy;
+  const receptionist = useReceptionist();
+  const busy = receptionist.busy;
 
   if (collapsed) {
     return (
-      <Tooltip label="Ask DocDesk" side="right" className="flex justify-center">
-        <button type="button" onClick={() => assistant.setOpen(true)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-[var(--wash)]" aria-label="Ask DocDesk">
+      <Tooltip label={`Ask ${brand.receptionist}`} side="right" className="flex justify-center">
+        <button type="button" onClick={() => receptionist.setOpen(true)} className="grid h-10 w-10 place-items-center rounded-xl hover:bg-[var(--wash)]" aria-label={`Ask ${brand.receptionist}`}>
           <span className={cn('ai-orb h-6 w-6', busy && 'is-busy')} />
         </button>
       </Tooltip>
@@ -246,7 +247,7 @@ function AskCard({ collapsed }) {
   return (
     <motion.button
       type="button"
-      onClick={() => assistant.setOpen(true)}
+      onClick={() => receptionist.setOpen(true)}
       whileHover={{ y: -1 }}
       whileTap={{ scale: 0.97 }}
       transition={spring}
@@ -256,7 +257,7 @@ function AskCard({ collapsed }) {
       <span className={cn('ai-orb h-8 w-8 shrink-0', busy && 'is-busy')} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-[13.5px] font-semibold">
-          Ask DocDesk <Sparkles size={12} className="text-violet" />
+          Ask {brand.receptionistShort} <Sparkles size={12} className="text-violet" />
         </span>
         <span className="block truncate text-[12px] text-ink-3">{busy ? 'Working on it…' : 'Your AI front desk'}</span>
       </span>

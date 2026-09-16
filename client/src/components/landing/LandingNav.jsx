@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { ArrowUpRight, X } from 'lucide-react';
 import { gsap, reduced, ScrollTrigger, useGsap } from '../../lib/gsap';
 import Wordmark from './Wordmark';
+import brand from '@shared/brand.json';
 
 const LINKS = [
   { label: 'What it does', href: '#does' },
   { label: 'The database', href: '#database' },
-  { label: 'The assistant', href: '#assistant' },
+  { label: brand.receptionist, href: '#receptionist' },
 ];
 
 /**

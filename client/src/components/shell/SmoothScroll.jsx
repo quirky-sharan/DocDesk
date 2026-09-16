@@ -8,7 +8,7 @@ const ScrollContext = createContext(null);
  * The app's one scrolling surface, with Lenis smoothing the wheel so scrolling
  * glides instead of stepping. Touch keeps its native feel, reduced-motion users
  * get plain scrolling (Lenis honours the setting), and anything that scrolls on
- * its own - the assistant, modals, wide tables - keeps working through
+ * its own - the receptionist, modals, wide tables - keeps working through
  * `allowNestedScroll`.
  */
 export function SmoothScrollProvider({ children }) {

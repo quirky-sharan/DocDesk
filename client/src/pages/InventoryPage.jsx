@@ -17,7 +17,7 @@ import { Meter, StatTile } from '../components/charts';
 import { Reveal, RevealGroup, RevealItem } from '../components/motion/Reveal';
 import ProductDetail from '../components/ProductDetail';
 import Scene3D from '../components/three/Scene3D';
-import { useAssistantView } from '../assistant/useAssistantView';
+import { useReceptionistView } from '../receptionist/useReceptionistView';
 import { useShell } from '../components/shell/ShellProvider';
 import { cn } from '../lib/cn';
 
@@ -82,7 +82,7 @@ export default function InventoryPage() {
     refreshAside().catch(() => {});
   }, [refreshAside]);
 
-  // Deep links from Spotlight, the dashboard and the assistant.
+  // Deep links from Spotlight, the dashboard and the receptionist.
   useEffect(() => {
     const view = params.get('view');
     if (params.get('new')) setEditing({ ...BLANK });
@@ -96,7 +96,7 @@ export default function InventoryPage() {
     shell.refreshCounts();
   }
 
-  useAssistantView('products', list, { category: setCategory, stock: setStock }, {
+  useReceptionistView('products', list, { category: setCategory, stock: setStock }, {
     defaultSort: 'name',
     onChange: () => refreshAside().catch(() => {}),
   });

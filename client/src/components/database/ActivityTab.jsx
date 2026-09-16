@@ -9,7 +9,9 @@ import { cn } from '../../lib/cn';
 
 const ACTORS = {
   web: { label: 'You, in the app', icon: UserRound },
-  assistant: { label: 'The assistant', icon: Bot },
+  receptionist: { label: 'Receptionist AI', icon: Bot },
+  // Written before the Phase 7 rename. Old rows are left as they were.
+  assistant: { label: 'Receptionist AI', icon: Bot },
   'sql-console': { label: 'SQL console', icon: TerminalSquare },
   'integrity-check': { label: 'Integrity fix', icon: ShieldCheck },
   'sample-data': { label: 'Sample data', icon: PackageCheck },

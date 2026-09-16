@@ -9,6 +9,7 @@ import Footer from '../components/landing/Footer';
 import SchemaGraphic from '../components/landing/SchemaGraphic';
 import { useTheme } from '../hooks/useTheme';
 import '../components/landing/landing.css';
+import brand from '@shared/brand.json';
 
 /* ===========================================================================
    Content
@@ -64,7 +65,7 @@ const CAPABILITIES = [
 
 const CARDS = [
   { title: 'Low-stock alerts', body: 'Raised by a trigger the moment stock crosses the reorder level - not by a job that might not run.' },
-  { title: 'An audit trail', body: 'The before and after of every insert, update and delete, with who did it: you, the assistant, or the SQL console.' },
+  { title: 'An audit trail', body: 'The before and after of every insert, update and delete, with who did it: you, Receptionist AI, or the SQL console.' },
   { title: 'Nobody overwrites anybody', body: 'Each edit checks a row version, so two people saving the same record cannot silently lose one of the changes.' },
   { title: 'Backups that restore', body: 'One compressed file with every record, made daily, put back in a single transaction.' },
   { title: 'Search that forgives typos', body: 'Trigram indexes across products, customers, suppliers and sales. Ctrl+K from anywhere.' },
@@ -412,7 +413,7 @@ function Database() {
           <Lede trigger className="lp-lede mt-7">
             Not in the app, where a second way of writing to the data could route around them. Foreign
             keys, CHECK constraints and triggers hold whether the write came from a page, the
-            assistant, or someone typing SQL.
+            receptionist, or someone typing SQL.
           </Lede>
 
           <dl className="mt-10 space-y-0">
@@ -444,8 +445,8 @@ function Database() {
   );
 }
 
-/** The assistant section: one request, typed out, and the card it produces. */
-function Assistant() {
+/** The receptionist section: one request, typed out, and the card it produces. */
+function Receptionist() {
   const typed = useRef(null);
   const sentence = 'Sell 3 sticky notes to Priya, paid by UPI';
 
@@ -471,13 +472,13 @@ function Assistant() {
         },
       })
       .to('[data-confirm]', { opacity: 1, y: 0, duration: 0.9, ease: 'expo.out' }, '+=0.25');
-    playWhenVisible(document.querySelector('[data-assistant]'), timeline, 'top 65%');
+    playWhenVisible(document.querySelector('[data-receptionist]'), timeline, 'top 65%');
   }, []);
 
   return (
-    <section id="assistant" ref={scope} className="lp-section scroll-mt-20 border-t border-[var(--line)]">
-      <div className="lp-shell" data-assistant>
-        <p className="lp-eyebrow mb-10">03 — The assistant</p>
+    <section id="receptionist" ref={scope} className="lp-section scroll-mt-20 border-t border-[var(--line)]">
+      <div className="lp-shell" data-receptionist>
+        <p className="lp-eyebrow mb-10">03 — {brand.receptionist}</p>
         <blockquote className="lp-quote max-w-[18ch]">
           <span className="lp-mask">
             <Display trigger>Say it in</Display>
@@ -521,7 +522,7 @@ function Assistant() {
 
           <div className="lg:pt-4">
             <Lede trigger className="lp-lede">
-              The assistant can read the whole database and work the answer out, open the right page
+              {brand.receptionist} can read the whole database and work the answer out, open the right page
               with the right filter already set, or draft a sale. What it will never do is change
               anything on its own.
             </Lede>
@@ -729,7 +730,7 @@ export default function LandingPage() {
         <Figures />
         <Capabilities />
         <Database />
-        <Assistant />
+        <Receptionist />
         <Details />
         <Closing />
       </main>

@@ -1,0 +1,9 @@
+{
+  "product": "DocDesk",
+  "receptionist": "Receptionist AI",
+  "receptionistShort": "Receptionist",
+  "receptionistId": "receptionist",
+  "actor": "receptionist",
+  "legacyActor": "assistant",
+  "tagline": "The front desk, answered."
+}
