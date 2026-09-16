@@ -653,6 +653,59 @@ const TOOLS = {
     },
   },
 
+  run_query: {
+    kind: 'read',
+    description:
+      'Last resort for a question no other tool answers: one read-only SELECT (PostgreSQL, single statement, writes refused, 20 rows back). '
+      + 'sales(id, reference, customer_id, subtotal, discount, tax, total, amount_paid, payment_status, created_at); '
+      + 'sale_items(sale_id, product_id, description, quantity, unit_price, unit_cost, line_total); '
+      + 'payments(sale_id, amount, method, paid_at); stock_movements(product_id, change, balance_after, kind, created_at); '
+      + 'purchase_orders/purchase_order_items(purchase_order_id, product_id, quantity_ordered, quantity_received); '
+      + 'plus categories, files, message_log, audit_log and the views v_product_stock, v_sales, v_customer_stats, v_supplier_stats. '
+      + 'Always LIMIT, and say in `question` what you are working out.',
+    parameters: obj(
+      {
+        sql: { type: 'string', description: 'One SELECT statement. No semicolon needed.' },
+        question: { type: 'string', description: 'What this answers, in plain words.' },
+      },
+      ['sql']
+    ),
+    async run({ sql, question }) {
+      const text = String(sql || '').trim();
+      if (!text) throw new ToolError('There is no query to run.');
+      // Reading only: the console refuses anything else, and this never passes
+      // allowWrite - so a query smuggled into a record can at most read.
+      if (!/^\s*(with|select)\b/i.test(text)) throw new ToolError('Only SELECT queries can be run here. Use the proper tool to change anything.');
+      let result;
+      try {
+        result = await api.post('/db/query', { sql: text });
+      } catch (err) {
+        throw new ToolError(`That query didn't run: ${err.message}`);
+      }
+      const columns = result.columns.map((c) => c.name);
+      const rows = result.rows.slice(0, 20).map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
+      return {
+        data: {
+          question: question || null,
+          columns,
+          rowCount: result.rowCount,
+          rows,
+          truncated: result.rowCount > rows.length,
+          durationMs: result.durationMs,
+        },
+        block: rows.length
+          ? {
+              type: 'table',
+              title: question || 'Query result',
+              columns: columns.slice(0, 4).map((key) => ({ key })),
+              rows: rows.map((r, i) => ({ id: i, ...r })),
+              total: result.rowCount,
+            }
+          : undefined,
+      };
+    },
+  },
+
   backup_database: {
     kind: 'ui',
     description: 'Make a backup of all data now and offer it for download.',

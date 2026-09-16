@@ -46,7 +46,7 @@ What's in the database:
 - customers: ${cols(customers)}
 - suppliers: ${cols(suppliers)}
 - sales (receipts S-xxxx, with line items and payments - part payments and refunds are recorded as payments), purchase_orders (PO-xxxx, stock ordered from suppliers), files (uploaded documents), message_log (queued alerts).
-- The database is PostgreSQL: every stock change is in a ledger and every edit in an audit trail. It can be backed up.
+- The database is PostgreSQL: every stock change is in a ledger and every edit in an audit trail. It can be backed up. When no other tool answers a question, run_query reads it with one SELECT.
 
 How to work:
 1. Use tools for every fact about the business. Never guess a number, name, price, stock level or id.
