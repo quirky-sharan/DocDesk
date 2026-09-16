@@ -929,6 +929,20 @@ than in a complaint.
   852 ms. The first run came back BLOCKED on a real failure, which is the
   mechanism working rather than a problem.
 - 208 tests, npm run build clean, every new page checked in the browser.
+- **Contrast re-audited** across Appointments, Knowledge, AI & models and
+  Settings, in both themes, measuring each text node against whatever is
+  actually painted behind it. Worst ratio 3.33 (sidebar group labels), then 3.41
+  (the alerts badge) and 3.65 (any primary button). All three are shared shell
+  elements that predate this phase: the untouched Inventory page measures the
+  same and in light mode is the worst page of the set. Nothing here made it
+  worse. No horizontal overflow at 375 px on any page; the four-tab control on
+  the AI page scrolls inside its own container, which is what that component
+  does everywhere. No console errors walking every page.
+- Worth repeating from Phase 3: **let the theme finish switching before
+  measuring**. Forcing `data-theme` by hand and reading straight away gives
+  interpolated nonsense, and so does measuring during the animation - the
+  untouched page appeared to score worse than the new ones until both were
+  given time to settle and driven through the app's own toggle.
 
 ### Gotchas
 
