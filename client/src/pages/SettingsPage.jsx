@@ -8,7 +8,7 @@ import {
 import { api } from '../api/client';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../hooks/useTheme';
-import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, useToast } from '../components/ui';
+import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, useToast, SegmentedControl } from '../components/ui';
 import { Reveal } from '../components/motion/Reveal';
 import { cn } from '../lib/cn';
 import brand from '@shared/brand.json';
@@ -144,7 +144,7 @@ export default function SettingsPage() {
           )}
 
           <AppearanceGroup />
-          <ReceptionistGroup />
+          <ReceptionistGroup values={values} set={set} />
           <DataGroup />
           <ShortcutsGroup />
         </div>
@@ -291,7 +291,7 @@ function AppearanceGroup() {
   );
 }
 
-function ReceptionistGroup() {
+function ReceptionistGroup({ values, set }) {
   const [status, setStatus] = useState(null);
   const [probing, setProbing] = useState(false);
   useEffect(() => {
@@ -318,6 +318,58 @@ function ReceptionistGroup() {
       tint="#ff375f"
       action={status?.configured && <Button variant="secondary" size="sm" icon={RefreshCw} loading={probing} onClick={probe}>Test</Button>}
     >
+      {/* This group sits outside the settings-loading branch, because the
+          connection status below it is worth showing before the form arrives. */}
+      {values && (
+      <div className="mb-5 space-y-4">
+        <Field
+          label="How it works"
+          hint="Suggest is the safe place to start: it drafts, you read it before anything happens."
+        >
+          <SegmentedControl
+            value={values.receptionist_mode}
+            onChange={set('receptionist_mode')}
+            ariaLabel="Receptionist mode"
+            options={[
+              { value: 'off', label: 'Off' },
+              { value: 'suggest', label: 'Suggest' },
+              { value: 'live', label: 'Live' },
+            ]}
+          />
+        </Field>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="What it calls itself" hint="Shown at the top of the panel">
+            <input className="input-field" value={values.receptionist_name} onChange={(e) => set('receptionist_name')(e.target.value)} />
+          </Field>
+          <Field label="Daily AI limit" hint="In tokens. 0 means no limit.">
+            <input className="input-field" type="number" min="0" value={values.ai_daily_token_cap} onChange={(e) => set('ai_daily_token_cap')(e.target.value)} />
+          </Field>
+        </div>
+
+        <Field
+          label="Emergency phrases"
+          hint="One per line. Matched before anything is sent anywhere, so this works even when the AI is down. Leave blank for the built-in medical list."
+        >
+          <textarea
+            className="input-field"
+            rows="3"
+            value={values.receptionist_emergency_phrases}
+            onChange={(e) => set('receptionist_emergency_phrases')(e.target.value)}
+            placeholder={['chest pain', 'not breathing', 'bleeding'].join('\n')}
+          />
+        </Field>
+
+        <Field label="What to say in an emergency" hint="Exact words. Nothing is generated on this path.">
+          <textarea className="input-field" rows="2" value={values.receptionist_emergency_response} onChange={(e) => set('receptionist_emergency_response')(e.target.value)} placeholder="Please call 108 for an ambulance now." />
+        </Field>
+
+        <Field label="Keep conversations for" hint="Days. Older ones are removed.">
+          <input className="input-field" type="number" min="7" max="3650" value={values.receptionist_retention_days} onChange={(e) => set('receptionist_retention_days')(e.target.value)} />
+        </Field>
+      </div>
+      )}
+
       {!status ? (
         <div className="skeleton h-16 rounded-[16px]" />
       ) : status.configured ? (

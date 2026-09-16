@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'motion/react';
-import { Bell, Building2, Database, FolderOpen, LogOut, Menu, Package, Search, Settings } from 'lucide-react';
+import { Bell, Building2, Database, FolderOpen, LogOut, Menu, Package, Power, PowerOff, Search, Settings } from 'lucide-react';
 import { api } from '../../api/client';
 import { useShell } from './ShellProvider';
 import { useSmoothScroll } from './SmoothScroll';
@@ -9,6 +9,9 @@ import { NAV } from './Sidebar';
 import Popover, { MenuItem } from '../ui/Popover';
 import Avatar from '../ui/Avatar';
 import Spinner from '../ui/Spinner';
+import Tooltip from '../ui/Tooltip';
+import { useToast } from '../ui/Toast';
+import brand from '@shared/brand.json';
 import { useSettings } from '../../lib/settings';
 import { displayNameFor, useAuth } from '../../auth/AuthProvider';
 import { useSpotlight } from '../spotlight/SpotlightProvider';
@@ -66,11 +69,73 @@ export default function TopBar() {
           <button type="button" onClick={() => spotlight.open()} className="btn-ghost btn-icon md:hidden" aria-label="Search">
             <Search size={18} />
           </button>
+          <KillSwitch />
           <Notifications />
           <ProfileMenu />
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Stops Receptionist AI from anywhere in the app, in one click.
+ *
+ * On the top bar rather than buried in settings because the moment you want it
+ * is the moment you have just seen it say something wrong, and that is not the
+ * moment to go looking through pages. Switching it off is instant and local -
+ * it stops calling any model and answers only from the records.
+ *
+ * It is deliberately quiet while everything is fine: a button that shouts all
+ * day gets ignored on the day it matters.
+ */
+function KillSwitch() {
+  const [mode, setMode] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  useEffect(() => {
+    api.settings.get().then((s) => setMode(s.values.receptionist_mode)).catch(() => {});
+  }, []);
+
+  if (!mode) return null;
+
+  const off = mode === 'off';
+
+  const flip = async () => {
+    setBusy(true);
+    const next = off ? 'suggest' : 'off';
+    try {
+      await api.settings.update({ receptionist_mode: next });
+      setMode(next);
+      toast.success(
+        next === 'off' ? `${brand.receptionist} is off` : `${brand.receptionist} is back on, in Suggest`,
+        {
+          description: next === 'off'
+            ? 'It will not call any AI service. Your records still answer hours and bookings.'
+            : 'It drafts; you approve before anything happens.',
+        }
+      );
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Tooltip label={off ? `Switch ${brand.receptionist} back on` : `Switch ${brand.receptionist} off`}>
+      <button
+        type="button"
+        onClick={flip}
+        disabled={busy}
+        aria-pressed={off}
+        className={cn('btn-ghost btn-icon', off && 'text-bad')}
+        aria-label={off ? `Switch ${brand.receptionist} back on` : `Switch ${brand.receptionist} off now`}
+      >
+        {off ? <PowerOff size={18} /> : <Power size={18} />}
+      </button>
+    </Tooltip>
   );
 }
 

@@ -114,6 +114,9 @@ router.put('/ai/providers/:key', ai.setProviderEnabled);
 router.get('/ai/agreement', ai.agreement);
 router.get('/ai/scoreboard', ai.scoreboard);
 
+router.get('/receptionist/front-desk', receptionist.frontDesk);
+router.get('/receptionist/conversations', receptionist.conversations);
+router.get('/receptionist/conversations/:id', receptionist.transcript);
 router.post('/receptionist/message', receptionist.message);
 router.post('/receptionist/confirm', receptionist.confirm);
 router.post('/receptionist/cancel', receptionist.cancel);

@@ -124,6 +124,7 @@ export const api = {
   messages: {
     list: (params) => request(`/messages${query(params)}`),
     send: () => request('/messages/send', { method: 'POST' }),
+    create: (payload) => send('/messages', 'POST', payload),
     remove: (id) => request(`/messages/${id}`, { method: 'DELETE' }),
   },
   files: {
@@ -135,6 +136,55 @@ export const api = {
   },
   ai: {
     status: (probe = false) => request(`/ai/status${probe ? '?probe=1' : ''}`),
+    models: () => request('/ai/models'),
+    discover: () => request('/ai/discover', { method: 'POST' }),
+    usage: (days = 7) => request(`/ai/usage${query({ days, tz: TIMEZONE })}`),
+    events: (params) => request(`/ai/events${query(params)}`),
+    markEventsSeen: (ids) => send('/ai/events/seen', 'POST', { ids }),
+    setOverrides: (payload) => send('/ai/overrides', 'PUT', payload),
+    setProviderEnabled: (key, enabled) => send(`/ai/providers/${encodeURIComponent(key)}`, 'PUT', { enabled }),
+    agreement: (days = 14) => request(`/ai/agreement${query({ days })}`),
+    scoreboard: (mode) => request(`/ai/scoreboard${query({ mode })}`),
+  },
+
+  // The front desk.
+  services: resource('/services'),
+  resources: {
+    ...resource('/resources'),
+    setServices: (id, serviceIds) => send(`/resources/${id}/services`, 'PUT', { service_ids: serviceIds }),
+  },
+  hours: {
+    get: () => request('/hours'),
+    set: (hours, resourceId = null) => send('/hours', 'PUT', { hours, resource_id: resourceId }),
+  },
+  closures: {
+    list: () => request('/closures'),
+    add: (payload) => send('/closures', 'POST', payload),
+    remove: (id) => request(`/closures/${id}`, { method: 'DELETE' }),
+  },
+  appointments: {
+    list: (params) => request(`/appointments${query(withTz(params))}`),
+    get: (id) => request(`/appointments/${id}`),
+    create: (payload) => send('/appointments', 'POST', payload),
+    day: (date) => request(`/appointments/day${query(withTz({ date }))}`),
+    availability: (params) => request(`/appointments/availability${query(withTz(params))}`),
+    reschedule: (id, payload) => send(`/appointments/${id}/reschedule`, 'POST', payload),
+    setStatus: (id, status, reason) => send(`/appointments/${id}/status`, 'POST', { status, reason }),
+    capabilities: () => request('/appointments/capabilities'),
+  },
+  leads: {
+    ...resource('/leads'),
+    convert: (id) => request(`/leads/${id}/convert`, { method: 'POST' }),
+  },
+  knowledge: {
+    list: () => request('/knowledge'),
+    get: (id) => request(`/knowledge/${id}`),
+    create: (payload) => send('/knowledge', 'POST', payload),
+    update: (id, payload) => send(`/knowledge/${id}`, 'PUT', payload),
+    remove: (id) => request(`/knowledge/${id}`, { method: 'DELETE' }),
+    search: (q) => request(`/knowledge/search${query({ q })}`),
+    gaps: (limit = 20) => request(`/knowledge/gaps${query({ limit })}`),
+    rebuild: () => request('/knowledge/rebuild', { method: 'POST' }),
   },
   receptionist: {
     message: (payload) => send('/receptionist/message', 'POST', payload),

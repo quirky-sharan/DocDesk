@@ -14,6 +14,7 @@ import { cn } from '../../lib/cn';
 import { spring, springSoft } from '../../lib/motion';
 import { useScrollLock } from './SmoothScroll';
 import { useEscapeLayer } from '../../hooks/useLayer';
+import { BookOpen, Bot, CalendarDays } from 'lucide-react';
 import brand from '@shared/brand.json';
 
 export const NAV = [
@@ -22,6 +23,13 @@ export const NAV = [
     items: [
       { name: 'Dashboard', path: '/', icon: LayoutGrid },
       { name: 'Reports', path: '/reports', icon: ChartColumnBig },
+    ],
+  },
+  {
+    label: 'Front desk',
+    items: [
+      { name: 'Appointments', path: '/appointments', icon: CalendarDays },
+      { name: 'Knowledge', path: '/knowledge', icon: BookOpen },
     ],
   },
   {
@@ -45,6 +53,7 @@ export const NAV = [
       { name: 'Files', path: '/files', icon: FolderOpen },
       { name: 'Messages', path: '/messages', icon: Bell, badge: 'queued' },
       { name: 'Database', path: '/database', icon: Database },
+      { name: 'AI & models', path: '/ai', icon: Bot },
       { name: 'Settings', path: '/settings', icon: Settings },
     ],
   },

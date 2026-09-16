@@ -31,6 +31,9 @@ const FilesPage = lazy(() => import('./pages/FilesPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const DatabasePage = lazy(() => import('./pages/DatabasePage'));
+const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage'));
+const AiPage = lazy(() => import('./pages/AiPage'));
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
 
 function PageLoading() {
   return (
@@ -142,6 +145,7 @@ function Shell() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/inventory" element={<InventoryPage />} />
+                  <Route path="/appointments" element={<AppointmentsPage />} />
                   <Route path="/sales" element={<SalesPage />} />
                   <Route path="/orders" element={<PurchaseOrdersPage />} />
                   <Route path="/customers" element={<ContactsPage kind="customers" />} />
@@ -150,6 +154,8 @@ function Shell() {
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/messages" element={<MessagesPage />} />
                   <Route path="/database" element={<DatabasePage />} />
+                  <Route path="/ai" element={<AiPage />} />
+                  <Route path="/knowledge" element={<KnowledgePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
