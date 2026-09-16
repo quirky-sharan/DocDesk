@@ -6,6 +6,7 @@ import {
 import { api } from '../../api/client';
 import { Badge, ErrorNote, Pagination, SearchInput, SegmentedControl } from '../ui';
 import ResultGrid from './ResultGrid';
+import RowInspector from './RowInspector';
 import { MONO_FONT } from './SqlEditor';
 import { TOKEN_COLORS, tokenize } from './sql';
 import { formatBytes, formatNumber } from '../../lib/format';
@@ -113,7 +114,7 @@ export default function TablesTab({ initialTable, onNavigate }) {
 
             <AnimatePresence mode="wait" initial={false}>
               <motion.div key={`${detail.name}-${section}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                {section === 'data' && <DataView table={detail.name} />}
+                {section === 'data' && <DataView table={detail.name} onOpenTable={(t) => setSelected(t)} />}
                 {section === 'columns' && <ColumnsView detail={detail} onOpen={(t) => setSelected(t)} />}
                 {section === 'indexes' && <IndexesView detail={detail} />}
                 {section === 'constraints' && <ConstraintsView detail={detail} onOpen={(t) => setSelected(t)} />}
@@ -128,12 +129,13 @@ export default function TablesTab({ initialTable, onNavigate }) {
   );
 }
 
-function DataView({ table }) {
+function DataView({ table, onOpenTable }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [inspecting, setInspecting] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -157,7 +159,7 @@ function DataView({ table }) {
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search any column…" />
-        {data && <span className="text-[12.5px] text-ink-3">Newest first · click a cell to copy</span>}
+        {data && <span className="text-[12.5px] text-ink-3">Newest first · click a row number to open it · click a cell to copy</span>}
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {!data ? (
@@ -166,10 +168,35 @@ function DataView({ table }) {
         <p className="panel px-6 py-12 text-center text-[13.5px] text-ink-3">{search ? 'No rows match.' : 'This table is empty.'}</p>
       ) : (
         <div className={cn('transition-opacity', loading && 'opacity-60')}>
-          <ResultGrid columns={data.columns} rows={data.rows} rowObjects maxHeight={560} />
+          <ResultGrid
+            columns={data.columns}
+            rows={data.rows}
+            rowObjects
+            maxHeight={560}
+            onOpenRow={(index) => {
+              const key = data.columns.find((c) => c.primaryKey)?.name || data.columns[0].name;
+              setInspecting({ table: data.table, id: data.rows[index][key] });
+            }}
+          />
         </div>
       )}
       {data && <Pagination meta={{ total: data.total, page: data.page, pageCount: data.pageCount, pageSize: data.pageSize }} page={page} onPage={setPage} loading={loading} />}
+
+      <AnimatePresence>
+        {inspecting && (
+          <RowInspector
+            key={`${inspecting.table}-${inspecting.id}`}
+            table={inspecting.table}
+            id={inspecting.id}
+            onClose={() => setInspecting(null)}
+            onOpenRow={(nextTable, nextId) => setInspecting({ table: nextTable, id: nextId })}
+            onOpenTable={(nextTable) => {
+              setInspecting(null);
+              onOpenTable?.(nextTable);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertOctagon, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock, Columns3, Download, Eraser, GitBranch, History, Play, ShieldAlert,
-  ShieldCheck, Sparkles, Table2, Trash2, Wand2,
+  AlertOctagon, BarChart3, Blocks, BookOpen, Bookmark, CheckCircle2, ChevronRight, Clock, Columns3, Download, Eraser, GitBranch, History,
+  Play, ShieldAlert, ShieldCheck, Sparkles, Star, Table2, TerminalSquare, Trash2, Wand2,
 } from 'lucide-react';
 import { api } from '../../api/client';
-import { Badge, Button, SegmentedControl } from '../ui';
+import { Badge, Button, ErrorNote, Field, Modal, SegmentedControl } from '../ui';
+import QueryBuilder from './QueryBuilder';
 import { ColumnChart, HorizontalBars } from '../charts';
 import SqlEditor, { MONO_FONT } from './SqlEditor';
 import ResultGrid, { isNumericType, toCsv } from './ResultGrid';
@@ -51,6 +52,9 @@ export default function SqlTab({ initialSql, capabilities }) {
   const [view, setView] = useState('results');
   const [history, setHistory] = useState(() => readJson(HISTORY_KEY, []));
   const [schema, setSchema] = useState(null);
+  const [mode, setMode] = useState('editor');
+  const [saved, setSaved] = useState([]);
+  const [naming, setNaming] = useState(null);
   const [samples, setSamples] = useState([]);
   const [side, setSide] = useState('samples');
 
@@ -64,10 +68,29 @@ export default function SqlTab({ initialSql, capabilities }) {
   }, [sql]);
 
   useEffect(() => {
-    api.db.relationships().then((d) => setSchema((s) => ({ ...s, tables: d.tables }))).catch(() => {});
+    api.db.relationships().then((d) => setSchema((s) => ({ ...s, tables: d.tables, relationships: d.relationships }))).catch(() => {});
     api.db.routines().then((r) => setSchema((s) => ({ ...s, views: r.views }))).catch(() => {});
     api.db.samples().then(setSamples).catch(() => {});
+    loadSaved();
   }, []);
+
+  function loadSaved() {
+    api.db.savedQueries().then((d) => setSaved(d.queries || [])).catch(() => {});
+  }
+
+  async function save(entry) {
+    const payload = { ...entry, sql };
+    if (entry.id) await api.db.updateQuery(entry.id, payload);
+    else await api.db.saveQuery(payload);
+    setNaming(null);
+    setSide('saved');
+    loadSaved();
+  }
+
+  async function removeSaved(id) {
+    await api.db.deleteQuery(id).catch(() => {});
+    loadSaved();
+  }
 
   const remember = useCallback((entry) => {
     setHistory((h) => {
@@ -77,7 +100,7 @@ export default function SqlTab({ initialSql, capabilities }) {
     });
   }, []);
 
-  async function run(selected) {
+  async function run(selected, savedId) {
     const text = (selected || sql).trim();
     if (!text) return;
     setRunning('run');
@@ -88,6 +111,7 @@ export default function SqlTab({ initialSql, capabilities }) {
       setPlan(null);
       if (view === 'plan') setView('results');
       remember({ sql: text, at: Date.now(), ms: data.durationMs, rows: data.rowCount, kind: data.kind, ok: true });
+      if (savedId && capabilities?.admin) api.db.updateQuery(savedId, { ran: true }).then(loadSaved).catch(() => {});
     } catch (err) {
       setError({ message: err.message, position: err.body?.position, sql: text, offset: selected ? sql.indexOf(selected) : 0 });
       remember({ sql: text, at: Date.now(), ok: false, message: err.message });
@@ -128,7 +152,32 @@ export default function SqlTab({ initialSql, capabilities }) {
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-4">
-        <div className="panel p-3 sm:p-4">
+        <SegmentedControl
+          value={mode}
+          onChange={setMode}
+          ariaLabel="How to write the query"
+          options={[['editor', 'Write SQL', TerminalSquare], ['builder', 'Build it', Blocks]]}
+        />
+
+        {mode === 'builder' && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="panel p-3 sm:p-4">
+            <QueryBuilder
+              schema={schema}
+              relationships={schema?.relationships || []}
+              onUse={(text) => {
+                setSql(text);
+                setMode('editor');
+              }}
+              onRun={(text) => {
+                setSql(text);
+                setMode('editor');
+                run(text);
+              }}
+            />
+          </motion.div>
+        )}
+
+        <div className={cn('panel p-3 sm:p-4', mode === 'builder' && 'hidden')}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Button icon={Play} loading={running === 'run'} onClick={() => run()}>Run</Button>
             <Button variant="secondary" icon={GitBranch} loading={running === 'explain'} onClick={explain}>Explain</Button>
@@ -137,6 +186,9 @@ export default function SqlTab({ initialSql, capabilities }) {
             </label>
             <span className="mx-1 hidden h-5 w-px bg-[var(--line)] sm:block" />
             <button type="button" className="btn-ghost btn-sm" onClick={() => setSql(formatSql(sql))}><Wand2 size={14} /> Format</button>
+            {capabilities?.admin && (
+              <button type="button" className="btn-ghost btn-sm" disabled={!sql.trim()} onClick={() => setNaming({ name: '', description: '', pinned: false })}><Bookmark size={14} /> Save</button>
+            )}
             <button type="button" className="btn-ghost btn-sm" onClick={() => setSql('')}><Eraser size={14} /> Clear</button>
             <span className="flex-1" />
             {capabilities?.admin ? (
@@ -231,7 +283,7 @@ export default function SqlTab({ initialSql, capabilities }) {
       <aside className="min-w-0 xl:sticky xl:top-32 xl:self-start">
         <div className="panel overflow-hidden">
           <div className="p-2" style={{ borderBottom: '1px solid var(--line)' }}>
-            <SegmentedControl size="sm" value={side} onChange={setSide} ariaLabel="Helpers" options={[['samples', 'Examples', BookOpen], ['schema', 'Schema', Columns3], ['history', 'History', History]]} />
+            <SegmentedControl size="sm" value={side} onChange={setSide} ariaLabel="Helpers" options={[['samples', 'Examples', BookOpen], ['saved', 'Saved', Bookmark, saved.length || undefined], ['schema', 'Schema', Columns3], ['history', 'History', History]]} />
           </div>
           <div className="max-h-[70vh] overflow-y-auto p-2" data-lenis-prevent>
             {side === 'samples' && (
@@ -248,6 +300,39 @@ export default function SqlTab({ initialSql, capabilities }) {
                   </motion.li>
                 ))}
               </ul>
+            )}
+            {side === 'saved' && (
+              saved.length === 0 ? (
+                <p className="px-3 py-8 text-center text-[13px] text-ink-3">
+                  Queries you save are kept in the database itself, so they are here on every machine{capabilities?.admin ? '' : ' - saving needs the console switched to allow changes'}.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {saved.map((q) => (
+                    <li key={q.id} className="group rounded-[12px] px-3 py-2 transition-colors hover:bg-[var(--wash)]">
+                      <button type="button" onClick={() => { setSql(q.sql); setMode('editor'); }} className="w-full text-left">
+                        <span className="flex items-center gap-1.5 text-[13px] font-medium">
+                          {q.pinned && <Star size={11} className="shrink-0 fill-[rgb(var(--c-warning))] text-warning" />}
+                          <span className="truncate">{q.name}</span>
+                        </span>
+                        {q.description && <span className="mt-0.5 block line-clamp-2 text-[11.5px] text-ink-2">{q.description}</span>}
+                        <span className="mt-1 block text-[11px] text-ink-3">
+                          {q.runCount ? `run ${q.runCount}×` : 'not run yet'}{q.last_run_at ? ` · ${formatRelative(q.last_run_at)}` : ''}
+                        </span>
+                      </button>
+                      <div className="mt-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => { setSql(q.sql); setMode('editor'); run(q.sql, q.id); }}><Play size={12} /> Run</button>
+                        {capabilities?.admin && (
+                          <>
+                            <button type="button" className="btn-ghost btn-sm" onClick={() => { setSql(q.sql); setNaming({ id: q.id, name: q.name, description: q.description || '', pinned: q.pinned }); }}>Edit</button>
+                            <button type="button" className="btn-danger btn-sm" onClick={() => removeSaved(q.id)}><Trash2 size={12} /></button>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
             )}
             {side === 'schema' && <SchemaTree schema={schema} onInsert={(text) => setSql((q) => `${q}${q && !/\s$/.test(q) ? ' ' : ''}${text}`)} />}
             {side === 'history' && (
@@ -275,7 +360,49 @@ export default function SqlTab({ initialSql, capabilities }) {
           </div>
         </div>
       </aside>
+
+      <AnimatePresence>
+        {naming && <SaveQueryModal key="save" entry={naming} sql={sql} onClose={() => setNaming(null)} onSave={save} />}
+      </AnimatePresence>
     </div>
+  );
+}
+
+function SaveQueryModal({ entry, sql, onClose, onSave }) {
+  const [form, setForm] = useState(entry);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave(form);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={entry.id ? 'Update this saved query' : 'Save this query'} subtitle="Kept in the database, so it is here on every machine and in every backup." icon={Bookmark} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <ErrorNote error={error} onDismiss={() => setError(null)} />
+        <Field label="Name"><input className="input-field" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus required maxLength={120} /></Field>
+        <Field label="What it answers" hint="Optional, but future you will thank present you">
+          <textarea className="input-field" rows="2" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} maxLength={500} />
+        </Field>
+        <label className="flex items-center gap-2 text-[13px] text-ink-2">
+          <input type="checkbox" checked={form.pinned} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} className="accent-[rgb(var(--c-accent))]" />
+          Keep it at the top of the list
+        </label>
+        <pre className="max-h-32 overflow-auto rounded-[12px] px-3 py-2 text-[12px]" style={{ fontFamily: MONO_FONT, background: 'rgb(var(--c-sunken))' }} data-lenis-prevent>{sql}</pre>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={busy} disabled={!form.name.trim()}>Save</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

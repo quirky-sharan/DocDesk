@@ -6,7 +6,7 @@ const integrity = require('../lib/dbconsole/integrity');
 const backup = require('../lib/dbconsole/backup');
 const monitor = require('../db/monitor');
 const { listRows, readListQuery, invalidateSchemaCache } = require('../lib/tables');
-const { fail } = require('../lib/validate');
+const { fail, text } = require('../lib/validate');
 
 /**
  * The Database page's API: overview, schema browser, ER diagram, SQL console,
@@ -65,6 +65,76 @@ exports.table = wrap(async (req, res) => {
 
 exports.rows = wrap(async (req, res) => {
   res.json(await catalog.browse(req.params.name, req.query));
+});
+
+exports.row = wrap(async (req, res) => {
+  res.json(await catalog.inspectRow(req.params.name, req.params.id));
+});
+
+exports.tableStats = wrap(async (req, res) => {
+  res.json(await catalog.tableStats());
+});
+
+// --- The console's saved queries -------------------------------------------
+//
+// Reading the library is always allowed; adding to it is a change to the
+// database, so it follows the same admin switch as everything else.
+
+exports.savedQueries = wrap(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, name, description, sql, pinned, run_count, last_run_at, created_at, updated_at
+       FROM saved_queries ORDER BY pinned DESC, last_run_at DESC NULLS LAST, name`
+  );
+  res.json({ queries: rows.map((r) => ({ ...r, runCount: Number(r.run_count) })), admin: adminEnabled() });
+});
+
+function readQuery(body = {}) {
+  const name = text(body.name, 'Name', { required: true, max: 120 });
+  const sql = String(body.sql || '').trim();
+  if (!sql) throw fail('There is no query to save.');
+  if (sql.length > 20000) throw fail('That query is too long to save.');
+  return { name, sql, description: text(body.description, 'Description', { max: 500 }), pinned: Boolean(body.pinned) };
+}
+
+exports.saveQuery = wrap(async (req, res) => {
+  requireAdmin();
+  const { name, sql, description, pinned } = readQuery(req.body);
+  const { rows } = await db.query(
+    `INSERT INTO saved_queries (name, description, sql, pinned) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (lower(btrim(name))) DO UPDATE
+       SET description = EXCLUDED.description, sql = EXCLUDED.sql, pinned = EXCLUDED.pinned
+     RETURNING id, name, description, sql, pinned, run_count, last_run_at`,
+    [name, description, sql, pinned]
+  );
+  res.status(201).json(rows[0]);
+});
+
+exports.updateQuery = wrap(async (req, res) => {
+  requireAdmin();
+  const body = req.body || {};
+  // Marking a query as run is the common case and needs no other fields.
+  if (body.ran) {
+    const { rows } = await db.query(
+      'UPDATE saved_queries SET run_count = run_count + 1, last_run_at = now() WHERE id = $1 RETURNING id, run_count, last_run_at',
+      [req.params.id]
+    );
+    if (!rows.length) throw fail('That saved query no longer exists.', 404);
+    return res.json(rows[0]);
+  }
+  const { name, sql, description, pinned } = readQuery(body);
+  const { rows } = await db.query(
+    'UPDATE saved_queries SET name = $2, description = $3, sql = $4, pinned = $5 WHERE id = $1 RETURNING *',
+    [req.params.id, name, description, sql, pinned]
+  );
+  if (!rows.length) throw fail('That saved query no longer exists.', 404);
+  res.json(rows[0]);
+});
+
+exports.deleteQuery = wrap(async (req, res) => {
+  requireAdmin();
+  const { rowCount } = await db.query('DELETE FROM saved_queries WHERE id = $1', [req.params.id]);
+  if (!rowCount) throw fail('That saved query no longer exists.', 404);
+  res.json({ ok: true });
 });
 
 exports.relationships = wrap(async (req, res) => {

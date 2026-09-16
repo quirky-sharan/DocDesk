@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Activity, AlertTriangle, Database, Gauge, HardDrive, ListTree, Pause, Play, RotateCw, Timer, Turtle, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, Database, Gauge, HardDrive, ListTree, Pause, Play, RotateCw, ShieldCheck, Timer, Turtle, Zap } from 'lucide-react';
 import { api } from '../../api/client';
 import { Badge, Card, CardHeader, ErrorNote } from '../ui';
 import { ColumnChart, HorizontalBars, Rings, RingsLegend, StatTile } from '../charts';
@@ -9,6 +9,101 @@ import { MONO_FONT } from './SqlEditor';
 import { TOKEN_COLORS, tokenize } from './sql';
 import { formatBytes, formatNumber, formatTime } from '../../lib/format';
 import { cn } from '../../lib/cn';
+
+/**
+ * What PostgreSQL knows about each table: whether its rows are found through an
+ * index or by reading it end to end, how much dead weight is waiting for a
+ * vacuum, and what to do about either. The advice comes from the server so the
+ * same thresholds apply wherever it is shown.
+ */
+function TableHealth() {
+  const [stats, setStats] = useState(null);
+  const [rows, setRows] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    api.db.tableStats().then(setStats).catch(() => setStats([]));
+    api.db.tables().then(setRows).catch(() => {});
+  }, []);
+
+  if (!stats) return <div className="skeleton h-64 rounded-[24px]" />;
+
+  const exact = new Map((rows || []).map((t) => [t.name, t.rows]));
+  const notable = stats.filter((t) => t.notes.some((n) => n.level !== 'ok'));
+  const shown = showAll ? stats : notable.length ? notable : stats.slice(0, 6);
+
+  return (
+    <Reveal>
+      <Card>
+        <CardHeader
+          title="Table health"
+          subtitle="How each table is being read, and whether anything needs attention."
+          icon={Database}
+          action={
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? 'Show what matters' : `Show all ${stats.length}`}
+            </button>
+          }
+        />
+        {notable.length === 0 && !showAll && (
+          <p className="mb-4 flex items-center gap-2 rounded-[12px] px-3 py-2 text-[13px]" style={{ background: 'var(--success-soft)' }}>
+            <ShieldCheck size={15} className="text-success" /> Nothing needs attention: no table is being read end to end often enough to matter, and none is carrying dead rows.
+          </p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-[13px]">
+            <thead>
+              <tr className="text-left text-[12px] text-ink-3">
+                <th className="pb-2 font-medium">Table</th>
+                <th className="pb-2 font-medium">Rows</th>
+                <th className="pb-2 font-medium">Found by index</th>
+                <th className="pb-2 font-medium">Writes</th>
+                <th className="pb-2 font-medium">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((t) => (
+                <tr key={t.table} style={{ borderTop: '1px solid var(--line)' }}>
+                  <td className="py-2.5 align-top" style={{ fontFamily: MONO_FONT }}>{t.table}</td>
+                  <td className="py-2.5 align-top tabular">
+                    {formatNumber(exact.get(t.table) ?? t.liveRows)}
+                    {t.deadRows > 0 && <span className="ml-1.5 text-[11.5px] text-warning">+{formatNumber(t.deadRows)} dead</span>}
+                  </td>
+                  <td className="w-40 py-2.5 align-top">
+                    {t.indexShare === null ? (
+                      <span className="text-ink-3">not read yet</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-20 overflow-hidden rounded-full" style={{ background: 'var(--chart-track)' }}>
+                          <motion.div className="h-full rounded-full" style={{ background: t.indexShare >= 60 ? 'var(--series-3)' : 'rgb(var(--c-warning))' }} initial={{ width: 0 }} whileInView={{ width: `${t.indexShare}%` }} viewport={{ once: true }} transition={{ type: 'spring', stiffness: 80, damping: 18 }} />
+                        </div>
+                        <span className="tabular text-[12px]">{t.indexShare}%</span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-2.5 align-top text-[12px] text-ink-2 tabular">
+                    {formatNumber(t.inserted)} in · {formatNumber(t.updated)} upd · {formatNumber(t.deleted)} del
+                  </td>
+                  <td className="py-2.5 align-top text-[12.5px]">
+                    {t.notes.map((n) => (
+                      <p key={n.text} className={cn('flex gap-1.5', n.level === 'warning' ? 'text-warning' : n.level === 'info' ? 'text-ink-2' : 'text-ink-3')}>
+                        {n.level === 'warning' && <AlertTriangle size={13} className="mt-0.5 shrink-0" />}
+                        {n.text}
+                      </p>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-[11.5px] text-ink-3">
+          Counts come from PostgreSQL&apos;s own statistics, which restart with the server on the embedded engine. Row totals are exact.
+        </p>
+      </Card>
+    </Reveal>
+  );
+}
 
 function Sql({ text, className }) {
   return (
@@ -158,6 +253,8 @@ export default function PerformanceTab() {
           </Card>
         </Reveal>
       </div>
+
+      <TableHealth />
 
       <Reveal>
         <Card>

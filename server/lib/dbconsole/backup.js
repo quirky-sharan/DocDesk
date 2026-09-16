@@ -27,7 +27,7 @@ const KEEP_AUTOMATIC = 14;
 
 // Parents before children, so every foreign key already has its target.
 const TABLE_ORDER = [
-  'settings', 'users', 'categories', 'suppliers', 'customers', 'products', 'sales', 'sale_items',
+  'settings', 'users', 'saved_queries', 'categories', 'suppliers', 'customers', 'products', 'sales', 'sale_items',
   'payments', 'purchase_orders', 'purchase_order_items', 'stock_movements', 'message_log', 'files', 'audit_log',
 ];
 const REFERENCE_SEQUENCES = [

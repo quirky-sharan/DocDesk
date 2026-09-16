@@ -21,7 +21,7 @@ function display(value) {
  * type, row numbers, NULL shown as NULL (not blank), numbers right-aligned,
  * click a header to sort the fetched rows, click a cell to copy it.
  */
-export default function ResultGrid({ columns = [], rows = [], maxHeight = 460, rowObjects = false }) {
+export default function ResultGrid({ columns = [], rows = [], maxHeight = 460, rowObjects = false, onOpenRow }) {
   const [sort, setSort] = useState(null);
   const [copied, setCopied] = useState(null);
 
@@ -83,7 +83,15 @@ export default function ResultGrid({ columns = [], rows = [], maxHeight = 460, r
         <tbody>
           {sorted.map(({ r, i }, rowIndex) => (
             <tr key={i} className="group">
-              <td className="sticky left-0 z-[5] px-3 py-1.5 text-right text-[11px] text-ink-3 tabular" style={{ background: 'rgb(var(--c-surface))', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>{rowIndex + 1}</td>
+              <td className="sticky left-0 z-[5] p-0 text-right text-[11px] text-ink-3 tabular" style={{ background: 'rgb(var(--c-surface))', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
+                {onOpenRow ? (
+                  <button type="button" onClick={() => onOpenRow(i)} title="Open this row" className="h-full w-full px-3 py-1.5 text-right transition-colors hover:bg-[var(--accent-soft)] hover:text-accent-ink">
+                    {rowIndex + 1}
+                  </button>
+                ) : (
+                  <span className="block px-3 py-1.5">{rowIndex + 1}</span>
+                )}
+              </td>
               {columns.map((c, j) => {
                 const value = r[j];
                 const text = display(value);

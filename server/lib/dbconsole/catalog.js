@@ -358,4 +358,114 @@ async function browse(name, { page = 1, pageSize = 50, sort, dir, search } = {})
   return { table, columns, rows, total, page: Math.max(Number(page) || 1, 1), pageSize: limit, pageCount: Math.max(Math.ceil(total / limit), 1), sort: sortColumn, dir: direction.toLowerCase() };
 }
 
-module.exports = { overview, tableSummaries, tableDetail, relationships, routines, browse, assertTableName, tableNames, columnsOf };
+// The column worth showing when a row is referred to from somewhere else.
+const LABEL_COLUMNS = ['name', 'reference', 'original_name', 'subject', 'key', 'username', 'description'];
+
+/**
+ * One row, with everything around it: the records it points at, how many point
+ * back at it, and its whole history from the audit trail. This is what the row
+ * inspector shows when you click a row in the table browser.
+ */
+async function inspectRow(name, id) {
+  const table = await assertTableName(name);
+  const columns = await columnsOf(table);
+  const key = columns.find((c) => c.primaryKey) || columns[0];
+
+  const { rows } = await db.query(`SELECT * FROM "${table}" WHERE "${key.name}"::text = $1`, [String(id)]);
+  if (!rows.length) throw fail(`No row with ${key.name} ${id} in ${table}`, 404);
+  const row = rows[0];
+
+  // Parent rows: follow each foreign key and read a name for it.
+  const references = [];
+  for (const column of columns.filter((c) => c.references && row[c.name] !== null && row[c.name] !== undefined)) {
+    const parentColumns = await columnsOf(column.references);
+    const label = LABEL_COLUMNS.find((c) => parentColumns.some((p) => p.name === c));
+    const { rows: parent } = await db.query(
+      `SELECT ${label ? `"${label}"` : 'id'} AS label, id FROM "${column.references}" WHERE id = $1`,
+      [row[column.name]]
+    );
+    references.push({ column: column.name, table: column.references, id: row[column.name], label: parent[0]?.label ?? null });
+  }
+
+  // Child rows: how many rows in other tables point at this one.
+  const { rows: incoming } = await db.query(
+    `SELECT c.conname AS name, fc.relname AS table_name, (SELECT a.attname FROM pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = c.conkey[1]) AS column_name
+       FROM pg_constraint c JOIN pg_class fc ON fc.oid = c.conrelid
+      WHERE c.contype = 'f' AND c.confrelid = ('public.' || $1)::regclass`,
+    [table]
+  );
+  const referencedBy = [];
+  for (const link of incoming) {
+    const { rows: counted } = await db.query(
+      `SELECT count(*) AS n FROM "${link.table_name}" WHERE "${link.column_name}" = $1`,
+      [row[key.name]]
+    );
+    referencedBy.push({ table: link.table_name, column: link.column_name, count: Number(counted[0].n) });
+  }
+
+  const { rows: history } = await db.query(
+    `SELECT id, action, actor, changed_fields, old_data, new_data, created_at
+       FROM audit_log WHERE table_name = $1 AND record_id::text = $2
+      ORDER BY created_at DESC, id DESC LIMIT 50`,
+    [table, String(row[key.name])]
+  );
+
+  return { table, key: key.name, columns, row, references, referencedBy, history };
+}
+
+/**
+ * Per-table statistics PostgreSQL keeps itself: how rows are being read, how
+ * much dead weight is waiting for a vacuum, and when it was last measured.
+ * The advice is worked out here rather than in the page, so the same rules
+ * apply wherever it is shown.
+ */
+async function tableStats() {
+  const { rows } = await db.query(`
+    SELECT s.relname AS table_name,
+           s.seq_scan, s.seq_tup_read, s.idx_scan, s.n_live_tup, s.n_dead_tup, s.n_mod_since_analyze,
+           s.n_tup_ins, s.n_tup_upd, s.n_tup_del,
+           GREATEST(s.last_vacuum, s.last_autovacuum) AS last_vacuum,
+           GREATEST(s.last_analyze, s.last_autoanalyze) AS last_analyze,
+           pg_total_relation_size(s.relid) AS total_bytes
+      FROM pg_stat_user_tables s
+     ORDER BY s.relname`);
+
+  return rows.map((r) => {
+    const live = Number(r.n_live_tup) || 0;
+    const dead = Number(r.n_dead_tup) || 0;
+    const seq = Number(r.seq_scan) || 0;
+    const idx = Number(r.idx_scan) || 0;
+    const readPerScan = seq > 0 ? Number(r.seq_tup_read) / seq : 0;
+    const notes = [];
+    // A full scan of a small table is cheaper than an index; only speak up once
+    // the table is big enough for it to matter.
+    if (live >= 500 && readPerScan >= 500 && seq > idx) {
+      notes.push({ level: 'warning', text: `Read end to end ${seq} times, ${Math.round(readPerScan)} rows each. An index on whatever is being filtered would pay for itself.` });
+    }
+    if (live >= 1000 && dead / Math.max(live, 1) > 0.2) {
+      notes.push({ level: 'warning', text: `${dead} dead rows waiting to be reclaimed - run Vacuum on the Health tab.` });
+    }
+    if (live >= 1000 && Number(r.n_mod_since_analyze) > live * 0.3) {
+      notes.push({ level: 'info', text: 'Changed a lot since it was last measured; refresh statistics so the planner keeps choosing well.' });
+    }
+    if (!notes.length) notes.push({ level: 'ok', text: seq + idx === 0 ? 'Not read yet since statistics were reset.' : 'Healthy.' });
+    return {
+      table: r.table_name,
+      seqScans: seq,
+      indexScans: idx,
+      indexShare: seq + idx > 0 ? Math.round((idx / (seq + idx)) * 100) : null,
+      liveRows: live,
+      deadRows: dead,
+      rowsPerSeqScan: Math.round(readPerScan),
+      inserted: Number(r.n_tup_ins) || 0,
+      updated: Number(r.n_tup_upd) || 0,
+      deleted: Number(r.n_tup_del) || 0,
+      lastVacuum: r.last_vacuum,
+      lastAnalyze: r.last_analyze,
+      totalBytes: Number(r.total_bytes) || 0,
+      notes,
+    };
+  });
+}
+
+module.exports = { overview, tableSummaries, tableDetail, relationships, routines, browse, inspectRow, tableStats, assertTableName, tableNames, columnsOf };
