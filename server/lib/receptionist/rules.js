@@ -122,6 +122,11 @@ const RULES = {
       /\b(complain|complaint|unhappy|not happy|disappointed|terrible|awful|appalling|unacceptable)\b/i,
       /\b(want|would like) (a )?refund\b/i,
       /\b(this is|that was) (a )?(disgrace|joke|shambles)\b/i,
+      // A threat of legal action is not a complaint to be handled - it is a
+      // thing that must reach a person immediately, and it is usually phrased
+      // calmly enough that nothing else here would catch it.
+      /\b(legal action|take (you|this) to court|see you in court|my (solicitor|lawyer)|consumer (court|forum)|sue)\b/i,
+      /\b(report (you|this) to|trading standards|ombudsman)\b/i,
     ],
     weak: [/\bwrong\b/i, /\bbad\b/i, /\bpoor\b/i],
   },

@@ -85,10 +85,15 @@ function detectEmergency(text, { phrases = null, response = null } = {}) {
  * to answer. It offers the earliest appointment and a person instead.
  */
 const ADVICE_PATTERNS = [
-  // Medical
-  /\b(should i|do i need to|is it (safe|normal|serious|ok))\b/i,
+  // Medical. "Is that serious?" is the commonest way this is actually asked,
+  // and the words in between vary, so the subject is not pinned down: "is this
+  // rash infected" and "is that lump serious" both have to land here.
+  /\b(should i|do i need to)\b/i,
+  /\bis (it|this|that|he|she|they)\b[^?.!]{0,40}\b(safe|normal|serious|ok|okay|bad|infected|broken|dangerous|urgent|worrying|fine)\b/i,
   /\b(diagnos|symptom|prescri|dosage|dose of|medicine for|treatment for|side effect)/i,
-  /\b(is this (cancer|infected|broken|serious))\b/i,
+  /\b(cancer|infected|fracture|tumour|tumor)\b[^?.!]{0,20}\?/i,
+  // Somebody describing a complaint and asking what to do about it.
+  /\b(has|have|had|been)\b[^?.!]{0,40}\b(pain|ache|swollen|swelling|rash|lump|bleeding|fever|dizzy|numb)\b[^?.!]{0,40}\?/i,
   // Legal
   /\b(sue|lawsuit|legal advice|my rights|liable|liability|contract says)\b/i,
   // Financial
