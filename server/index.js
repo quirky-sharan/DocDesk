@@ -7,6 +7,7 @@ const db = require('./db');
 const { migrate, listTables } = require('./db/migrate');
 const { importLegacySqlite } = require('./db/legacy/importSqlite');
 const { scheduleBackups } = require('./lib/dbconsole/backup');
+const llm = require('./lib/llm');
 const errorHandler = require('./middleware/errorHandler');
 const systemRoutes = require('./routes/system');
 const devRoutes = require('./routes/dev');
@@ -61,6 +62,10 @@ async function prepareDatabase() {
     // empty, so it can simply be tried again on the next start.
     console.error(`  [import] Could not carry over the old SQLite database: ${err.message}`);
   });
+  // Ask each provider what models it has, and read back what is left of
+  // yesterday's allowances. Deliberately not awaited by the request middleware:
+  // DocDesk answers with no AI at all, so nothing waits on this.
+  llm.warmUp().catch(() => {});
   return applied;
 }
 
