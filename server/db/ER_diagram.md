@@ -146,6 +146,17 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    SAVED_QUERIES {
+        bigint id PK
+        text name
+        text description
+        text sql
+        boolean pinned
+        integer run_count
+        timestamptz last_run_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
     SCHEMA_MIGRATIONS {
         text version PK
         text name
@@ -371,6 +382,22 @@ Triggers:
 - `sales_touch` runs `touch_row()`
 
 Indexes: `sales_reference_key`, `sales_created_at_idx`, `sales_customer_created_idx`, `sales_outstanding_idx` (partial)
+
+### saved_queries
+
+Queries saved from the SQL console, with how often each has been run.
+
+Rules enforced by the database:
+
+- `saved_queries_name_length` - check: `CHECK (((char_length(btrim(name)) >= 1) AND (char_length(btrim(name)) <= 120)))`
+- `saved_queries_run_count_positive` - check: `CHECK ((run_count >= 0))`
+- `saved_queries_sql_length` - check: `CHECK (((char_length(btrim(sql)) >= 1) AND (char_length(btrim(sql)) <= 20000)))`
+
+Triggers:
+
+- `saved_queries_touch` runs `touch_row()`
+
+Indexes: `saved_queries_name_key`, `saved_queries_pinned_idx`
 
 ### schema_migrations
 
