@@ -821,3 +821,180 @@ a product with no users yet has no honest social proof to put up.
   to decide before a second one exists.
 - Real message delivery, the 8 part-paid legacy sales, and rotating the Groq key
   are all still open from the previous entry.
+
+---
+
+## 2026-09-17 — Phase 7: Receptionist AI
+
+Asked for: AI/ML in the receptionist, from a long build spec written by another
+model. That spec describes a customer-facing receptionist — a public widget,
+Telegram, WhatsApp, phone. **Sharan said the opposite when asked: only he talks
+to it.** That one answer removed about 40% of the spec and changed what the rest
+is for, so read this entry rather than that spec where the two disagree.
+
+### What the repo looked like on arrival
+
+Clean. 21 tests passing, `npm run build` clean, Phase 6 finished. Three things
+were not as the spec assumed:
+
+- There is no BUILDLOG.md. This file is the build log.
+- There was no REQUIREMENTS-RECEPTIONIST.md. There is now.
+- **Both OpenRouter models hardcoded in lib/llm/index.js were gone** from its
+  free list. The fallback provider had been quietly dead for some time. Phase
+  5's lesson repeating, which set the tone for the whole phase.
+
+### The decisions worth keeping
+
+**Owner-facing, but the trust boundary is still built.** No public widget, no
+channels. What survives untouched is the half that mattered anyway: customer
+names, notes, message bodies and imported rows are attacker-influenced text
+sitting in the database that a prompt will later render. The front desk has its
+own tool registry — not a filter over the operator's — and a test walks it and
+fails if anything touching SQL, cost prices, stock counts, purchase orders,
+settings or backups appears in it. Turning a public channel on later is work,
+not a rewrite.
+
+**Availability is computed in SQL, never in JS.** available_slots() generates
+candidates from opening hours minus closures, bookings, buffers and per-day
+caps, bucketed in the business timezone. Filtering rows after the fact is what
+broke the stock counts in Phase 2, and here it would book two people into one
+room. The browser only draws what the function returns, and there is no
+free-text time box anywhere in the UI.
+
+**Double-booking is stopped by the database.** book_appointment() takes a
+per-resource advisory lock and re-checks the clash inside it, and an
+EXCLUDE USING gist constraint refuses an overlap even for a write that skips the
+function entirely. btree_gist works in PGlite **only if it is handed to it at
+open time** — the worker loads it now. If it is ever missing, the table still
+builds and the lock is the guard, and scheduling_capabilities() reports which
+protections are actually present rather than letting anyone assume.
+
+**An appointment's status is derived from its events**, the way a sale's
+payment_status is derived from its payments. Setting appointments.status
+directly raises.
+
+**Nothing names a model.** Models are discovered from each provider, written to
+ai_models, and matched against a preference *expression* rather than a name. A
+model released next month is usable without editing anything; a retired one
+simply drops out.
+
+**The error taxonomy is the whole fallback chain.** Ten classes, each with
+exactly one action. quota_daily and credits_exhausted stay separate because one
+resets tonight and the other needs Sharan to do something, and they get
+different sentences. A per-minute limit is never treated as exhausted.
+
+**Budgets are persisted.** A restart must not hand the process a fresh daily
+allowance it does not have. Continuous and fixed windows are computed
+differently, and Groq's headers confirmed Phase 5's measurement exactly: 8,000
+tokens/minute continuous, 1,000 requests/day fixed, per model.
+
+**The answerability gate.** Before stating a fact about the business, retrieval
+has to find support; below the floor it says it is not sure and offers to take a
+message. A model asked something it cannot answer will produce something
+plausible, because that is what it is for. The floor can be raised, never
+lowered.
+
+**The rules classifier runs on every turn**, whatever the model did. It is the
+floor when there is no model, and a check on the model when there is: rising
+disagreement means the prompt has drifted, and it shows up on a chart rather
+than in a complaint.
+
+### What exists now
+
+- Migrations 008-013: scheduling, conversations, knowledge, AI operations,
+  evaluations, two more message channels. 42 tables.
+- lib/llm/ rebuilt as a gateway: an adapter per provider, discovery, the
+  taxonomy, persisted budgets, tier routing, pooling across providers, a usage
+  ledger and plain-English events.
+- lib/receptionist/: date-time and phone parsers, the intent table, the
+  deterministic engine, emergency and advice detection, the untrusted envelope,
+  the front-desk tool registry, conversation recording.
+- lib/knowledge/: hybrid retrieval, the gate, generated documents.
+- Pages: Appointments, Knowledge, AI & models, receptionist settings, and a kill
+  switch in the top bar.
+- npm run bench:receptionist — 106 cases, results in the database.
+
+### Verified by actually running it
+
+- **A real booking, end to end.** "book a consultation tomorrow at 10 for Priya"
+  matched the existing customer, proposed it with the price and the person, and
+  created A-1001 on confirm. It then answered "what time is Priya's
+  appointment?" correctly.
+- **With the key removed:** hours and services still answered from the database,
+  the emergency script still fired, and every provider on the AI page said what
+  to do about it. 100/100 on the degraded benchmark subset.
+- **The kill switch:** clicking it set the mode to off, put the gateway into
+  deterministic-only, and the next question was answered with no model at all.
+- **Benchmark:** degraded 100/100; openai/gpt-oss-120b 106/106, p50 641 ms, p95
+  852 ms. The first run came back BLOCKED on a real failure, which is the
+  mechanism working rather than a problem.
+- 208 tests, npm run build clean, every new page checked in the browser.
+
+### Gotchas
+
+- **Never force-kill DocDesk.** Stop-Process -Force during a write left a PGlite
+  data directory that would not reopen at all — "Aborted()" on every attempt —
+  and the only way back was the nightly backup. stop_all.bat already asks it to
+  close cleanly first via /api/system/shutdown. Nothing was wrong with the
+  shipped stop script; I simply did not use it, and it cost an hour and a few
+  hours of data.
+- **A table added by a migration is not reachable** through the generic list
+  layer until it is named in lib/tables.js. The failure is a 400 saying the
+  table is unknown, which reads as a database problem when it is a missing line
+  in a file.
+- **The list endpoints do not agree on a name.** The generic table layer answers
+  with { rows }, the controllers written for the front desk answer with
+  { items }. A tool that guesses wrong silently sees an empty list and tells
+  somebody the business offers nothing.
+- **Groq's allam-2-7b answers chat but rejects a tool schema** with a 400 that
+  reads exactly like our own malformed request. No provider's /models says which
+  models take tools, so the only way to find out is to try — and now it
+  remembers, and that knowledge survives the next re-discovery.
+- **"Failed to parse tool call arguments as JSON"** is a model fumbling its own
+  output, not our bug. The previous version handled it; the rewrite dropped it,
+  and a live booking attempt died on it.
+- **pg_trgm's similarity() returns a small non-zero score for almost any pair of
+  strings**, so before the floor every question "found" something and the
+  answerability gate would have believed it had support. Asking about delivery
+  when the knowledge base only covers opening hours now returns zero rows.
+- **A discovery triggered by a model retirement must not run in the same turn**
+  that noticed it, or it writes model rows while that turn is still reading
+  them.
+- **`\b` inside a JS template literal is a backspace character** and `\d` is just
+  "d". Writing regexes through a shell heredoc put literal 0x08 bytes into a
+  source file. This log already warned about it and it still cost an hour,
+  twice. Use the editor for anything containing a backslash.
+- **node -e "require('./routes')" never exits** — requiring the routes opens the
+  database and the PGlite worker keeps the event loop alive. Always exit
+  explicitly.
+
+### Deviations from the spec, and why
+
+- **Money is numeric(14,2)**, not integer cents. The spec asked for cents; the
+  rest of this schema is numeric, and two money representations in one database
+  is a bug waiting to happen. Amounts are still computed in integer cents in JS
+  so the rounding matches.
+- **The QR walk-in kiosk is not built.** The spec called it the highest-value
+  item in the document, and for a real shop it is — but it is inherently a
+  public surface, which this phase does not have. The walk-in queue exists,
+  owner-operated.
+- **A model that has never been benchmarked is still routed to**, with its
+  unproven state shown on the AI page. Applying "must pass before pooling"
+  strictly would mean a fresh install could not answer anything until somebody
+  ran a benchmark. A model that has *failed* a must-pass case is never routed
+  to, which is the half that actually protects anyone.
+
+### Still open
+
+- **Voice.** Browser speech in and out. Planned, not built.
+- **Reminders.** Appointments send nothing the day before. sendQueued() is still
+  the mock sender; real delivery is open from Phase 6.
+- **The Front Desk inbox page.** The API exists (/api/receptionist/front-desk)
+  and conversations are recorded, but the screen that shows them is not built.
+  Appointments and Knowledge cover the daily work without it.
+- **The Google adapter has never run against a live key.** Written and wired,
+  unverified. First place to look if it misbehaves.
+- **Booking lead time and cancellation windows** are settings with no
+  enforcement behind them yet.
+- The Groq key still needs rotating, and two test Firebase accounts want
+  deleting. Both are in REQUIREMENTS-RECEPTIONIST.md.

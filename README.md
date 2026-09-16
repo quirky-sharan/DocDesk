@@ -161,9 +161,24 @@ Reads in the console run in a read-only transaction that is always rolled back.
 Changes need **Allow changes** switched on, and on a hosted database that switch
 is off unless `DB_ADMIN=on`.
 
+**Appointments** — the day or the week, with booking, moving, confirming,
+arrivals, no-shows and cancellations. Free times come from the database, which
+knows your opening hours, closed days, gaps between jobs and what is already
+booked, so only real slots are ever offered and two people cannot end up in one
+room.
+
+**Knowledge** — what Receptionist AI may say about the business. Opening hours,
+services and your details are kept up to date for you; anything else you write.
+It also lists the questions nobody could answer, so each one is a couple of
+sentences away from being answered for good.
+
+**AI & models** — which AI services are up, how much of each free allowance is
+left, what has been used, and what changed on its own. Every state comes with
+the next useful thing to do about it.
+
 **Settings** — business details with a live receipt preview, currency and tax,
-the business timezone (reports count days in it), appearance, Receptionist AI status,
-and sample data.
+the business timezone (reports count days in it), appearance, Receptionist AI
+settings and status, and sample data.
 
 **Receptionist AI** — the front desk on every page. Press **Ctrl+J** or click the
 orb, and ask or tell it anything:
@@ -173,6 +188,14 @@ orb, and ask or tell it anything:
 - *"Sell 3 sticky notes to Priya, paid by UPI"* — and hands you the receipt
 - *"Order everything that's running low"* · *"Back up the database now"*
 - *"What's the average number of items per sale?"* — when no other tool fits, it works the answer out with a read-only query
+- *"Book a consultation tomorrow at 10 for Priya"* — it checks what is actually
+  free, shows you the booking, and only writes it when you confirm
+
+It works across several free AI services at once and moves between them as each
+one's allowance runs out, without you noticing. **With no AI service at all** it
+still answers your opening hours, what you offer, where you are and what is
+booked today — those are database questions — and takes a message for anything
+else. The power button in the top bar stops it instantly from any page.
 
 **It never changes anything without asking.** Anything that adds, edits,
 deletes or orders shows a card with exactly what will happen and waits for you
@@ -204,7 +227,9 @@ Run these from `server/`.
 | `npm run seed` | load the sample data into an empty database |
 | `npm run seed:clear` | delete all business records |
 | `npm test` | run the database rules against a throwaway database (never your data) |
-| `npm run bench:ai` | score Receptionist AI against real requests |
+| `npm run bench:ai` | score the table-operation interpreter against real requests |
+| `npm run bench:receptionist` | score Receptionist AI: 106 cases, including everything it must refuse |
+| `npm run bench:receptionist -- --degraded` | only what must still work with no AI service at all |
 
 ## API
 
