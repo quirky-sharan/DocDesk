@@ -687,3 +687,28 @@ Safety model — keep it:
 - The legacy import left 8 part-paid sales without an amount; record their
   payments from Sales when known.
 - The Groq key pasted into chat earlier still needs rotating.
+
+### Added after the first pass (same day)
+
+- **Tests.** `server/tests/rules.test.js`, run with `npm test` (node:test, no new
+  dependency). It points `PGDATA_DIR` at `db/test-pgdata`, migrates, and empties
+  the tables between tests, so it never touches real data; with `DATABASE_URL`
+  set it checks a hosted database instead. 21 checks: constraints, the stock
+  ledger, payments-derived status, low-stock alerts, purchase receipts,
+  sequences, row_version, the audit trail, views, timezone bucketing, trigram
+  search and rollback.
+- **Saved queries** live in the database (migration 007) rather than the browser,
+  so the console's library is on every machine and inside every backup.
+- **Query builder** (client-side) writes SQL from the real schema: joins are
+  offered only where a foreign key exists, and picking a total groups the rest.
+- **Row inspector**: click a row number in the table browser to see its values,
+  what it points at, what points back, and its audit history.
+- **Table health** on the Performance tab: index-vs-sequential reads, dead rows,
+  and advice, with the thresholds decided on the server (`catalog.tableStats`).
+- **`run_query`** gives the assistant one read-only SELECT for questions no other
+  tool answers. It never passes allowWrite, so text hidden in a record can at
+  most cause a read.
+- **Print styles** for the Reports page's Print button (no sidebar, white paper,
+  no page breaks through a card).
+- `clear()` no longer truncates `settings` - clearing records shouldn't forget
+  the shop's name, currency and timezone.
