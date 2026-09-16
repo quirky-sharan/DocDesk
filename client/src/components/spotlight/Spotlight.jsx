@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  ArrowRight, Building2, CornerDownLeft, Database, FileSpreadsheet, Moon, Package, PackagePlus,
-  Receipt, Search, Sun, Truck, Upload, UserPlus, Users,
+  ArrowRight, Building2, CornerDownLeft, Database, FileSpreadsheet, HeartPulse, Moon, Network, Package, PackagePlus,
+  Receipt, Search, Sun, TerminalSquare, Truck, Upload, UserPlus, Users,
 } from 'lucide-react';
 import { api, exportUrl } from '../../api/client';
 import { NAV } from '../shell/Sidebar';
@@ -135,7 +135,10 @@ export default function Spotlight({ initialQuery = '', onClose }) {
       { id: 'add-supplier', label: 'Add a supplier', icon: Users, keywords: 'vendor create', run: () => navigate('/suppliers?new=1') },
       { id: 'upload', label: 'Upload files', icon: Upload, keywords: 'documents photos invoices', run: () => navigate('/files') },
       { id: 'export', label: 'Download inventory as Excel', icon: FileSpreadsheet, keywords: 'export xlsx spreadsheet', run: () => { window.location.href = exportUrl('products', 'xlsx'); } },
-      { id: 'backup', label: 'Back up the database', icon: Database, keywords: 'backup dump restore sql', run: () => navigate('/database?tab=backups') },
+      { id: 'backup', label: 'Back up the database', icon: Database, keywords: 'backup dump restore', run: () => navigate('/database?tab=backups') },
+      { id: 'sql', label: 'Open the SQL console', icon: TerminalSquare, keywords: 'sql query database explain run select', run: () => navigate('/database?tab=sql') },
+      { id: 'schema', label: 'See the database diagram', icon: Network, keywords: 'schema er diagram tables relationships keys', run: () => navigate('/database?tab=diagram') },
+      { id: 'integrity', label: 'Check the data is consistent', icon: HeartPulse, keywords: 'integrity health check repair verify', run: () => navigate('/database?tab=health') },
       {
         id: 'theme', label: isDark ? 'Switch to light appearance' : 'Switch to dark appearance', icon: isDark ? Sun : Moon, keywords: 'theme dark light mode',
         run: () => setMode(isDark ? 'light' : 'dark'),
