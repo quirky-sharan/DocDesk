@@ -30,6 +30,11 @@ const context = new AsyncLocalStorage();
 // a transaction block.
 const WRITE = /^\s*(?:\(\s*)*(insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|comment|refresh|reindex|cluster)\b/i;
 const CTE_WRITE = /^\s*with\b[\s\S]*\b(insert|update|delete)\b/i;
+// Functions that change data while the statement still reads as a SELECT.
+// Without this, `SELECT book_appointment(...)` runs outside a transaction, the
+// actor is never set, and the audit trail records 'system' for a booking a
+// person made. Add any new write function here.
+const WRITE_FUNCTION = /\b(book_appointment|reschedule_appointment|set_appointment_status|apply_stock_change)\s*\(/i;
 
 function stripComments(sql) {
   return sql.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -37,7 +42,7 @@ function stripComments(sql) {
 
 function isWrite(sql) {
   const text = stripComments(sql);
-  return WRITE.test(text) || CTE_WRITE.test(text);
+  return WRITE.test(text) || CTE_WRITE.test(text) || WRITE_FUNCTION.test(text);
 }
 
 function currentActor() {

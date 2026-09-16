@@ -9,6 +9,11 @@
 const { parentPort, workerData } = require('worker_threads');
 const { PGlite, types } = require('@electric-sql/pglite');
 const { pg_trgm } = require('@electric-sql/pglite/contrib/pg_trgm');
+// Needed for the appointments exclusion constraint: a GiST index over a plain
+// bigint (resource_id) alongside a range needs btree_gist to know how to index
+// the bigint. A hosted PostgreSQL has it in contrib; here it has to be handed
+// to PGlite at open time, because CREATE EXTENSION alone cannot find it.
+const { btree_gist } = require('@electric-sql/pglite/contrib/btree_gist');
 
 let db;
 
@@ -41,7 +46,7 @@ function shape(result) {
 async function open() {
   db = await PGlite.create({
     dataDir: workerData.dataDir,
-    extensions: { pg_trgm },
+    extensions: { pg_trgm, btree_gist },
     parsers,
   });
   // Stored timestamps are UTC; reports convert to the shop's timezone explicitly.
