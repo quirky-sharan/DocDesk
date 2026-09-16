@@ -92,7 +92,63 @@ wrong — tell me.
 
 ---
 
-## 2. Messaging — Phase 6
+## 2. Sign-in — already connected
+
+**What's built:** accounts, with an email and password or with Google. The
+landing page is what a signed-out visitor sees; everything else asks for a
+sign-in first and then sends you on to wherever you were headed. The session
+survives closing the browser.
+
+**This one needs nothing from you.** The Firebase project (`dbms-91b7e`) is
+already wired in at `client/src/lib/firebase.js`, both sign-in methods are
+switched on, and `localhost` is on the authorised-domain list, so it works on
+this computer as it stands.
+
+### Why the keys are in the code
+
+A Firebase web config is **not a secret**. It identifies the project to Google
+and is meant to ship inside the browser bundle — anyone can read it out of any
+Firebase site's source. What actually keeps other people out is the authorised
+domain list and, later, the security rules. So these values are committed on
+purpose, and there is nothing here to rotate or hide.
+
+They can still be overridden per environment without touching code. Put any of
+these in `client/.env` to point a build somewhere else:
+
+```
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MEASUREMENT_ID=
+```
+
+### The one thing to do before deploying
+
+Firebase only allows sign-in from domains it knows. The moment DocDesk is on a
+real address, add it:
+
+**console.firebase.google.com → dbms-91b7e → Authentication → Settings →
+Authorised domains → Add domain.**
+
+Currently on the list: `localhost`, `dbms-91b7e.firebaseapp.com`,
+`dbms-91b7e.web.app`. Miss this and sign-in fails with
+*"this address is not on the sign-in allow list"*.
+
+### Managing accounts
+
+**Authentication → Users** lists everyone who has signed up, and is where you
+delete an account or trigger a password reset by hand.
+
+> There is one test account in there — **desk.test@docdesk.test** — created
+> while checking that sign-up, sign-in and sign-out actually worked. Delete it
+> whenever you like; nothing depends on it.
+
+---
+
+## 3. Messaging — Phase 6
 
 **What's built:** the trigger logic. Stock falling to its reorder level, or a
 sale to a customer with contact details, queues a message. You can see exactly
@@ -118,7 +174,7 @@ drop-in.
 
 ---
 
-## 3. Database — only when deploying
+## 4. Database — only when deploying
 
 Locally DocDesk runs **PostgreSQL 18 embedded** (PGlite) with its data in
 `server/db/pgdata/`, and needs nothing installed. But most hosts wipe the

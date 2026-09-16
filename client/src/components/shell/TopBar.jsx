@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'motion/react';
-import { Bell, Building2, Database, FolderOpen, Menu, Package, Search, Settings, UserRound } from 'lucide-react';
+import { Bell, Building2, Database, FolderOpen, LogOut, Menu, Package, Search, Settings } from 'lucide-react';
 import { api } from '../../api/client';
 import { useShell } from './ShellProvider';
 import { useSmoothScroll } from './SmoothScroll';
@@ -10,6 +10,7 @@ import Popover, { MenuItem } from '../ui/Popover';
 import Avatar from '../ui/Avatar';
 import Spinner from '../ui/Spinner';
 import { useSettings } from '../../lib/settings';
+import { displayNameFor, useAuth } from '../../auth/AuthProvider';
 import { useSpotlight } from '../spotlight/SpotlightProvider';
 import { formatRelative } from '../../lib/format';
 import { cn } from '../../lib/cn';
@@ -160,23 +161,44 @@ function Notifications() {
   );
 }
 
+/** The account photo where the provider gave us one, initials where it did not. */
+function AccountFace({ user, name, size }) {
+  if (user?.photoURL) {
+    return (
+      <img
+        src={user.photoURL}
+        alt=""
+        width={size}
+        height={size}
+        referrerPolicy="no-referrer"
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size, boxShadow: '0 0 0 1px var(--line)' }}
+      />
+    );
+  }
+  return <Avatar name={name} size={size} />;
+}
+
 function ProfileMenu() {
   const anchor = useRef(null);
   const [open, setOpen] = useState(false);
   const { businessName } = useSettings();
+  const { user, signOut } = useAuth();
   const close = useCallback(() => setOpen(false), []);
+
+  const name = displayNameFor(user) || businessName;
 
   return (
     <>
       <button ref={anchor} type="button" onClick={() => setOpen((v) => !v)} className="ml-1 rounded-full transition-transform duration-300 hover:scale-105 active:scale-95" aria-label="Account menu" aria-expanded={open}>
-        <Avatar name={businessName} size={34} />
+        <AccountFace user={user} name={name} size={34} />
       </button>
       <Popover anchorRef={anchor} open={open} onClose={close} className="w-64 p-1.5" role="menu" label="Account">
         <div className="flex items-center gap-3 px-2.5 pb-3 pt-2">
-          <Avatar name={businessName} size={40} />
+          <AccountFace user={user} name={name} size={40} />
           <div className="min-w-0">
-            <p className="truncate text-[14px] font-semibold">{businessName}</p>
-            <p className="text-[12px] text-ink-3">Signed in on this computer</p>
+            <p className="truncate text-[14px] font-semibold">{name}</p>
+            <p className="truncate text-[12px] text-ink-3">{user?.email || businessName}</p>
           </div>
         </div>
         <div className="divider mx-1 mb-1" />
@@ -185,10 +207,17 @@ function ProfileMenu() {
         <MenuItem as={Link} to="/database" icon={Database} onClick={close}>Database</MenuItem>
         <MenuItem as={Link} to="/settings" icon={Settings} onClick={close}>Settings</MenuItem>
         <div className="divider mx-1 my-1" />
-        <div className="flex items-start gap-2.5 px-2.5 py-2 text-[12px] leading-snug text-ink-3">
-          <UserRound size={15} className="mt-px shrink-0" />
-          Personal accounts and sign-in come later - for now DocDesk runs as one shop on this computer.
-        </div>
+        <MenuItem
+          icon={LogOut}
+          onClick={() => {
+            close();
+            // Signing out drops the whole private tree and the landing page
+            // takes over; no navigation needed.
+            signOut().catch(() => {});
+          }}
+        >
+          Sign out
+        </MenuItem>
       </Popover>
     </>
   );

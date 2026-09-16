@@ -11,12 +11,17 @@ import { ToastProvider } from './components/ui/Toast';
 import { SettingsProvider } from './lib/settings';
 import { AssistantProvider, useAssistant } from './assistant/AssistantProvider';
 import AssistantPanel, { AssistantLauncher } from './assistant/AssistantPanel';
-import DashboardPage from './pages/DashboardPage';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
+import { Mark } from './components/landing/Wordmark';
+import LandingPage from './pages/LandingPage';
+import AuthPage from './pages/AuthPage';
 import { cn } from './lib/cn';
 import { EASE_OUT } from './lib/motion';
 
-// The dashboard is the landing page and ships with the app; every other page
-// loads the first time it is opened, which keeps the first load small.
+// The landing page and sign-in ship with the app because they are what an
+// anonymous visitor lands on - making either of them a second round trip would
+// show a blank page first. Everything behind sign-in loads when it is opened.
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const InventoryPage = lazy(() => import('./pages/InventoryPage'));
 const SalesPage = lazy(() => import('./pages/SalesPage'));
 const ContactsPage = lazy(() => import('./pages/ContactsPage'));
@@ -40,23 +45,68 @@ function PageLoading() {
   );
 }
 
+/**
+ * Shown for the fraction of a second Firebase needs to say whether there is a
+ * saved session. Deliberately almost nothing: a signed-in person must not see
+ * the landing page flash past on the way to their dashboard.
+ */
+function Booting() {
+  return (
+    <div className="grid min-h-[100svh] place-items-center" aria-busy="true" aria-label="Loading DocDesk">
+      <Mark size={26} className="animate-pulse text-ink-3" />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <MotionConfig reducedMotion="user">
-      <SettingsProvider>
-        <ToastProvider>
-          <SmoothScrollProvider>
-            <AssistantProvider>
-              <SpotlightProvider>
-                <ShellProvider>
-                  <Shell />
-                </ShellProvider>
-              </SpotlightProvider>
-            </AssistantProvider>
-          </SmoothScrollProvider>
-        </ToastProvider>
-      </SettingsProvider>
+      <AuthProvider>
+        <Routes>
+          <Route path="/signin" element={<AuthPage />} />
+          <Route path="*" element={<Gate />} />
+        </Routes>
+      </AuthProvider>
     </MotionConfig>
+  );
+}
+
+/**
+ * Decides which of the two apps is running: the public one (a landing page) or
+ * the private one (the front desk). Everything the product needs - settings,
+ * the assistant, the spotlight, the shell - is mounted only on the private
+ * side, so a visitor who never signs in never triggers an API call.
+ */
+function Gate() {
+  const { user, ready } = useAuth();
+  const location = useLocation();
+
+  if (!ready) return <Booting />;
+
+  if (!user) {
+    // The landing page is the front door; every other address remembers where
+    // it was headed and asks for a sign-in first.
+    return location.pathname === '/' ? (
+      <LandingPage />
+    ) : (
+      <Navigate to="/signin" state={{ from: location }} replace />
+    );
+  }
+
+  return (
+    <SettingsProvider>
+      <ToastProvider>
+        <SmoothScrollProvider>
+          <AssistantProvider>
+            <SpotlightProvider>
+              <ShellProvider>
+                <Shell />
+              </ShellProvider>
+            </SpotlightProvider>
+          </AssistantProvider>
+        </SmoothScrollProvider>
+      </ToastProvider>
+    </SettingsProvider>
   );
 }
 

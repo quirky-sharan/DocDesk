@@ -712,3 +712,112 @@ Safety model — keep it:
   no page breaks through a card).
 - `clear()` no longer truncates `settings` - clearing records shouldn't forget
   the shop's name, currency and timezone.
+
+---
+
+## 2026-09-16 — Sign-in and the front door
+
+Sharan handed over a live Firebase web config and asked for authentication
+first, then a landing page, explicitly lifting the "no real keys until Phase 6"
+rule for this one. Both are done and both are verified against the real project
+(`dbms-91b7e`), not a stub.
+
+### Authentication
+
+- `client/src/lib/firebase.js` — one connection. `initializeAuth` rather than
+  `getAuth` so persistence order is explicit: IndexedDB first, localStorage
+  behind it for private windows. Analytics is loaded lazily behind
+  `isSupported()` and every failure is swallowed, so it can never be the reason
+  a sign-in fails.
+- `client/src/auth/AuthProvider.jsx` — `user`, `ready`, and sign up / sign in /
+  Google / sign out / reset. Every Firebase error code is mapped to a sentence a
+  non-technical person can act on; an unmapped code gets a sentence too and only
+  logs the code in dev. Google uses a popup and falls back to a redirect when
+  the browser blocks it, with `getRedirectResult` on mount to catch the return.
+- **The config is committed on purpose.** A Firebase web config is public by
+  design — it identifies the project, it does not authorise anything. What keeps
+  others out is the authorised-domain list. `VITE_FIREBASE_*` still override it
+  per environment. This is written down in `REQUIREMENTS.md` so it doesn't get
+  "fixed" later by someone assuming it leaked.
+
+### How the app splits in two
+
+`App.jsx` now has a `Gate`. Signed out, `/` is the landing page and every other
+address redirects to `/signin` carrying where it was headed; signed in, the
+whole product mounts as before. **Settings, the toasts, the assistant, the
+spotlight and the shell moved inside the signed-in branch** — a visitor who
+never signs in now triggers no API calls at all. `DashboardPage` became lazy and
+the landing page took its place as the eager one, since it is what an anonymous
+visitor actually lands on.
+
+The account menu in the top bar is now the real user — Google photo where there
+is one, initials where there isn't — with Sign out. Signing out drops the
+private tree and the landing page takes over; no navigation needed.
+
+### The landing page
+
+Studied awwwards.com's hero directly in the browser (Firecrawl isn't wired into
+this session) and took the principles, not the design: one typeface, an extreme
+jump in scale between 11px meta labels and ~8rem display type set at a line
+height under 1, hairline rules instead of boxes, square media, a strictly
+monochrome ground, and a single 0.3s transition on everything that reacts to a
+pointer. Those map onto DocDesk's existing tokens almost exactly (#f5f5f7 /
+#1d1d1f against their #f8f8f8 / #222), so the page is built from the same
+variables and follows light and dark with the rest of the app.
+
+Nine sections, in `client/src/pages/LandingPage.jsx` plus
+`client/src/components/landing/`. GSAP + ScrollTrigger for motion, Lenis for the
+scroll, `components/three/DeskScene3D.jsx` for the hero object. **No image files
+anywhere** — every graphic is geometry, SVG or type.
+
+Everything the page claims is something the product does. The four figures are
+counts of the real thing (11 screens, 21 tests, 8 console tabs, 0 spreadsheets):
+a product with no users yet has no honest social proof to put up.
+
+### Three lessons worth keeping
+
+- **Never let a ScrollTrigger own a reveal that should stay revealed.**
+  `ScrollTrigger.refresh()` — which fires whenever fonts swap, the canvas
+  settles or the window resizes — reverts the animation it owns back to its
+  start values, and a trigger that is now far above the fold never re-enters to
+  replay it, so the text parks below its mask for good. `playWhenVisible()` in
+  `lib/gsap.js` builds the timeline paused and creates the trigger separately
+  with `once: true`, so a refresh can recalculate all it likes and never touch
+  what has already run.
+- **Masked text clips its own descenders.** Display type is set below a line
+  height of 1, so each character's mask is shorter than the glyph. `splitChars`
+  pads the mask and takes the same amount back off as negative margin — without
+  it every p, g and y is cut in half.
+- The hidden-pane throttling noted in the last entry cost an hour here: GSAP's
+  ticker sits at frame 0 while the pane is hidden, so reading transforms over
+  the MCP bridge shows every animation frozen at its "from" state. It looks
+  exactly like a bug. **Screenshots are the only honest way to check motion.**
+
+### Verified against the real project
+
+- Providers probed over the Identity Toolkit REST API: email/password and Google
+  are both enabled, and `localhost`, `dbms-91b7e.firebaseapp.com` and
+  `dbms-91b7e.web.app` are the authorised domains.
+- Signed up through the UI as **desk.test@docdesk.test** → landed on the
+  dashboard with the display name showing in the account menu. Signed out →
+  landing page. Asked for `/reports` while signed out → sign-in → landed on
+  `/reports`, not the dashboard. Reloaded on `/inventory` → stayed signed in,
+  no landing-page flash.
+- Google: the button reaches Google's real "to continue to
+  dbms-91b7e.firebaseapp.com" screen. **Not carried past that point** — finishing
+  it would mean signing in as a real Google account, which is Sharan's to do.
+- `npm run build` clean. Landing page checked at 1440 and 375, light and dark,
+  with no console errors.
+
+### Still open
+
+- Finish a Google sign-in once by hand, to confirm the round trip end to end.
+- Delete the `desk.test@docdesk.test` account from Firebase → Authentication →
+  Users when it has served its purpose.
+- **Add the deployed domain to the authorised list before shipping** — sign-in
+  fails on any domain Firebase doesn't know.
+- The app still has one shop's data behind whichever account signs in; accounts
+  are not yet scoped to their own records. Fine for one business, and the thing
+  to decide before a second one exists.
+- Real message delivery, the 8 part-paid legacy sales, and rotating the Groq key
+  are all still open from the previous entry.

@@ -7,9 +7,10 @@ Built for people who are not technical. Every screen should be obvious, forgivin
 and hard to break — and underneath, a real PostgreSQL database that does the
 bookkeeping itself.
 
-> **Status: design and database rebuilt.** Every page is redesigned, the data
-> lives in PostgreSQL with its rules enforced by the database, and there is a
-> full database console built in.
+> **Status: signed in.** Every page is redesigned, the data lives in PostgreSQL
+> with its rules enforced by the database, there is a full database console
+> built in, and DocDesk now has a front door — a landing page and real accounts,
+> with an email and password or with Google.
 
 ---
 
@@ -40,6 +41,11 @@ cd client && npm install && npm run dev
 
 Then open **http://localhost:5173**.
 
+The first thing you'll see is the landing page. **Create an account** (or
+**Continue with Google**) and you're at the front desk. Sign-in is already
+connected to a live Firebase project and needs no setup — see `REQUIREMENTS.md`
+for the one thing to do before deploying.
+
 On first run the dashboard offers to load sample data — five months of trading
 for a small stationery shop — so there is something to look at.
 
@@ -48,7 +54,8 @@ for a small stationery shop — so there is something to look at.
 ## How it fits together
 
 ```
-client/   React 19 + Vite + Tailwind, motion, three.js   → localhost:5173
+client/   React 19 + Vite + Tailwind, motion, GSAP,       → localhost:5173
+          three.js, Firebase Auth
 server/   Express REST API                               → localhost:5000
           └ db/  PostgreSQL: embedded locally, hosted via DATABASE_URL
 ```
@@ -97,6 +104,17 @@ deployment can be verified before it carries real data.
 ---
 
 ## What it does
+
+**The landing page** — what anyone who isn't signed in sees. A three.js desk
+built out of the same four things the dashboard shows, headlines that set
+themselves a character at a time, a schema that draws its own foreign keys, and
+a footer that is a real sitemap. GSAP drives the motion; Lenis drives the
+scroll; nothing on it is an image file.
+
+**Signing in** — an email and a password, or Google. Ask for any page while
+signed out and DocDesk remembers it, asks you to sign in, and then takes you
+there. The session survives closing the browser, and **Sign out** is in the
+account menu, top right.
 
 **Dashboard** — a greeting that tells you how the week is going in a sentence, a
 3D skyline of daily takings, today against a usual day, what's selling, what
