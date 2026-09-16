@@ -65,6 +65,16 @@ const CLASSES = {
     userVisible: false,
     sentence: 'That model has been retired. Looking up what is available now.',
   },
+  // The model exists and works - it just cannot do the thing being asked of it.
+  // Found the hard way: Groq's allam-2-7b answers chat fine but rejects a tool
+  // schema with a 400, which read as our own bad request and killed the turn
+  // instead of moving to a model that can. No provider's /models says which
+  // models take tools, so this is how we find out, and it is worth remembering.
+  capability_missing: {
+    action: ACTIONS.PARK_MODEL,
+    userVisible: false,
+    sentence: 'That model cannot do this kind of request. Using another one.',
+  },
   context_overflow: {
     action: ACTIONS.COMPRESS_RETRY,
     userVisible: false,
@@ -129,6 +139,27 @@ function classifyHttp(status, detail = '', headers = null) {
     if (/per[ -]?day|daily|RPD|TPD|quota.*exceeded.*day/i.test(text)) return 'quota_daily';
     if (/credit|balance/i.test(text)) return 'credits_exhausted';
     return 'rate_limited';
+  }
+
+  // Checked before context_overflow and bad_request, both of which would
+  // otherwise swallow it: providers report an unsupported feature as a 400 with
+  // wording that looks a lot like a malformed request.
+  //
+  // Two separate tests rather than one regex spanning both halves. Groq's
+  // wording is "`tool calling` is not supported with this model" - backticks
+  // and all - and a single pattern trying to bridge the feature name and the
+  // refusal broke on the punctuation between them.
+  const unsupported = /\b(not|un)\s*support|unsupported|does not support/i.test(text);
+  const feature = /\btool[\s_-]*(calling|use|choice)?\b|\bfunction[\s_-]*call/i.test(text)
+    || /\bresponse_format\b|\bjson[\s_-]*mode\b/i.test(text);
+  if (unsupported && feature) return 'capability_missing';
+
+  // A model that fumbled its own tool-call JSON. It can do tools - it just made
+  // a mess of this one - so it is worth another go rather than a dead end. The
+  // previous version handled this and it was dropped in the rewrite; putting it
+  // back cost a live booking attempt.
+  if (/failed to parse tool call|invalid tool call|tool_calls.*invalid|malformed.*tool/i.test(text)) {
+    return 'transient';
   }
 
   if (/context length|maximum context|too many tokens|reduce the length|input is too long/i.test(text)) {

@@ -129,6 +129,82 @@ const TOOL_INTENT = {
   find_customer: 'order_status',
 };
 
+/**
+ * What the receptionist can still do when no model will answer.
+ *
+ * This is the promise in the build spec made real: revoke every key, exhaust
+ * every free allowance, pull the network cable, and hours, services, the
+ * address and the day's diary still come back - because those are database
+ * questions that the rules classifier can recognise and a tool can answer
+ * without anything being generated.
+ *
+ * Everything else becomes "I'll take a message", which is a working
+ * receptionist rather than an error page. There is never a dead end.
+ */
+async function deterministicTurn(ruleRead, { conversationId, reason }) {
+  const intent = ruleRead?.intent || 'other';
+  const say = async (tool, args, format) => {
+    try {
+      const result = await TOOLS[tool].run(args || {});
+      return format(result.data);
+    } catch {
+      return null;
+    }
+  };
+
+  let reply = null;
+
+  if (intent === 'opening_hours') {
+    reply = await say('get_opening_hours', {}, (data) => {
+      if (!data.hours?.length) return null;
+      const days = data.hours.map((h) => `${h.day}: ${h.open}–${h.close}`).join('\n');
+      const shut = data.closed_days?.length
+        ? `\n\nClosed: ${data.closed_days.map((c) => c.from + (c.reason ? ` (${c.reason})` : '')).join(', ')}`
+        : '';
+      return `Opening hours:\n${days}${shut}`;
+    });
+  } else if (intent === 'service_enquiry' || intent === 'price_enquiry') {
+    reply = await say('list_services', {}, (data) => {
+      if (!data?.length) return null;
+      return `What can be booked:\n${data.map((s) => `- ${s.name}, ${s.minutes} minutes, ${s.price}`).join('\n')}`;
+    });
+  } else if (intent === 'location_directions') {
+    reply = await say('get_business_info', {}, (data) => {
+      if (data.address) return `${data.name}\n${data.address}${data.phone ? `\nPhone: ${data.phone}` : ''}`;
+      // Saying "I can only answer where you are" and then not answering it is
+      // worse than admitting the address was never filled in.
+      return `No address has been saved for ${data.name || 'the business'} yet - it goes in Settings.`;
+    });
+  } else if (intent === 'check_appointment') {
+    reply = await say('get_day_schedule', {}, (data) => {
+      if (!data.appointments?.length) return 'Nothing is booked for today.';
+      return `Today:\n${data.appointments.map((a) => `- ${a.time} ${a.who} (${a.what})`).join('\n')}`;
+    });
+  }
+
+  await conversations.addEvent(conversationId, 'model_switch', {
+    to: 'rules', reason, intent, answered: Boolean(reply),
+  });
+
+  if (reply) {
+    return {
+      reply,
+      // Said once, quietly, and only to the owner - they should know the answer
+      // came from the records rather than from a model that was thinking.
+      blocks: [{ type: 'note', text: 'Answered from your records - the AI service is unavailable right now.' }],
+      handledWithoutModel: true,
+    };
+  }
+
+  return {
+    reply: "I can't reach the AI service at the moment, so I can only answer from your records - "
+      + 'opening hours, what you offer, where you are, and what is booked today. '
+      + 'For anything else, tell me and I will take it down as a message.',
+    blocks: [],
+    handledWithoutModel: true,
+  };
+}
+
 /** Keeps history bounded without leaving a tool result orphaned from its call. */
 function trimHistory(messages) {
   if (messages.length <= MAX_HISTORY) return messages;
@@ -293,13 +369,38 @@ async function runTurn({ messages: incoming, userText, page, continuation, maxWa
   let reply = '';
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const result = await chat({
-      messages: [system, ...compressOlderTurns(trimHistory(history))],
-      tools,
-      temperature: 0.2,
-      maxTokens: 900,
-      maxWaitMs,
-    });
+    let result;
+    try {
+      result = await chat({
+        messages: [system, ...compressOlderTurns(trimHistory(history))],
+        tools,
+        temperature: 0.2,
+        maxTokens: 900,
+        maxWaitMs,
+        conversationId,
+      });
+    } catch (err) {
+      // No model would answer: out of allowance, no key, offline, or told to
+      // work without one. Fall to what the records can answer rather than
+      // handing back an error - but only at the start of a turn. Losing the
+      // model half way through a tool sequence means the reply would be built
+      // on an incomplete picture, and a wrong answer is worse than an honest
+      // "try again".
+      if (!(err instanceof LlmError) || step > 0) throw err;
+      const fallback = await deterministicTurn(ruleRead, { conversationId, reason: err.errorClass });
+      history.push({ role: 'assistant', content: fallback.reply });
+      await conversations.addMessage(conversationId, { role: 'receptionist', content: fallback.reply, origin: 'internal' });
+      return {
+        ...fallback,
+        messages: trimHistory(history),
+        actions: [],
+        activity: [],
+        pending: [],
+        model: null,
+        intent: ruleRead?.intent ?? null,
+        conversationId,
+      };
+    }
     model = result.model;
     const message = result.message;
     if (result.usage) {

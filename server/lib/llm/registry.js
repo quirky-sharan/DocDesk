@@ -132,16 +132,27 @@ async function discover({ force = false } = {}) {
                  family = EXCLUDED.family,
                  tier = EXCLUDED.tier,
                  context_window = EXCLUDED.context_window,
-                 capabilities = EXCLUDED.capabilities,
                  last_seen_at = now(),
                  -- A model that has been away for a while and is listed again
                  -- is usable again. One that failed minutes ago stays out: a
                  -- provider's listing can be stale, and re-enabling a model
                  -- that just 404'd would undo the retirement in the same turn
                  -- that noticed it.
+                 --
+                 -- "does not support" is different in kind from a failure. It
+                 -- is something we LEARNED by trying, it does not expire, and
+                 -- it must survive re-discovery - otherwise the next sweep puts
+                 -- the tools capability back on a model that has already told
+                 -- us it cannot do tools, and the whole thing repeats.
                  is_enabled = ai_models.last_error IS NULL
+                              OR ai_models.last_error LIKE 'does not support%'
                               OR ai_models.last_error_at < now() - interval '30 minutes',
+                 capabilities = CASE
+                   WHEN ai_models.last_error LIKE 'does not support%' THEN ai_models.capabilities
+                   ELSE EXCLUDED.capabilities
+                 END,
                  last_error = CASE
+                   WHEN ai_models.last_error LIKE 'does not support%' THEN ai_models.last_error
                    WHEN ai_models.last_error_at < now() - interval '30 minutes' THEN NULL
                    ELSE ai_models.last_error
                  END`,
@@ -281,6 +292,27 @@ function preferenceIndex(spec, model, modelTier, wantedTier) {
   return spec.prefer.length + 1 + distance;
 }
 
+/**
+ * Records that a model cannot do something, learned from being told so mid
+ * request. No provider's /models reports which models take tools, so the only
+ * way to find out is to try - and the only way that is not annoying is to
+ * remember the answer.
+ */
+async function removeCapability(providerKey, model, capability) {
+  await db.query(
+    `UPDATE ai_models
+        SET capabilities = (
+              SELECT COALESCE(jsonb_agg(value), '[]'::jsonb)
+                FROM jsonb_array_elements(capabilities) AS value
+               WHERE value <> to_jsonb($3::text)
+            ),
+            last_error = $4,
+            last_error_at = now()
+      WHERE provider_key = $1 AND model = $2`,
+    [providerKey, model, capability, `does not support ${capability}`]
+  ).catch(() => {});
+}
+
 /** Records that a model could not be used, so routing stops offering it. */
 async function disableModel(providerKey, model, reason) {
   await db.query(
@@ -313,5 +345,5 @@ async function recordHealth(providerKey, { ok, latencyMs }) {
 
 module.exports = {
   TIERS, discover, candidates, syncProviders, activeAdapters, discoverable,
-  disableModel, parkProvider, recordHealth, preferenceIndex,
+  disableModel, removeCapability, parkProvider, recordHealth, preferenceIndex,
 };

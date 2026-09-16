@@ -63,8 +63,11 @@ const RULES = {
       /\b(confirm|check)\b.{0,20}\b(appointment|booking)\b/i,
       /\bwho('s| is) (coming|booked|in)\b/i,
       /\bwhat('s| is) (on|in the diary|the schedule)\b/i,
+      /\bwhat\b.{0,12}\bbooked\b/i,
+      /\b(anything|anyone|much|who)\b.{0,15}\b(booked|in|on)\b.{0,12}\b(today|tomorrow|this (morning|afternoon)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+      /\b(today'?s|tomorrow'?s)\b.{0,10}\b(diary|schedule|list|appointments?)\b/i,
     ],
-    weak: [/\bappointment\b/i, /\bdiary\b/i, /\bschedule\b/i],
+    weak: [/\bappointment\b/i, /\bdiary\b/i, /\bschedule\b/i, /\bbooked\b/i],
   },
   opening_hours: {
     strong: [

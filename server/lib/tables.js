@@ -116,6 +116,62 @@ const TABLES = {
     defaultDir: 'desc',
     searchable: ['table_name', 'action', 'actor', 'record_key'],
   },
+
+  // The front desk. A table added by a migration is NOT reachable through this
+  // layer until it is named here, and the failure is a 400 saying the table is
+  // unknown - which is easy to read as a database problem when it is a missing
+  // line in this file. Found exactly that way.
+  services: {
+    label: 'Services',
+    defaultSort: 'name',
+    searchable: ['name', 'description'],
+    computed: {
+      resource_count: '(SELECT count(*) FROM resource_services rs WHERE rs.service_id = t.id)',
+      booked_count: "(SELECT count(*) FROM appointments a WHERE a.service_id = t.id AND a.status NOT IN ('cancelled', 'no_show'))",
+    },
+  },
+  resources: {
+    label: 'People and places',
+    defaultSort: 'name',
+    searchable: ['name', 'kind', 'notes'],
+    computed: {
+      service_count: '(SELECT count(*) FROM resource_services rs WHERE rs.resource_id = t.id)',
+    },
+  },
+  appointments: {
+    label: 'Appointments',
+    defaultSort: 'starts_at',
+    defaultDir: 'desc',
+    searchable: ['reference', 'status', 'source', 'notes'],
+    joins: [
+      { table: 'customers', alias: 'c', on: 'c.id = t.customer_id', columns: { customer_name: 'c.name' } },
+      { table: 'services', alias: 'sv', on: 'sv.id = t.service_id', columns: { service_name: 'sv.name' } },
+      { table: 'resources', alias: 'r', on: 'r.id = t.resource_id', columns: { resource_name: 'r.name' } },
+    ],
+  },
+  leads: {
+    label: 'New contacts',
+    defaultSort: 'first_seen_at',
+    defaultDir: 'desc',
+    searchable: ['name', 'phone', 'email', 'note', 'source'],
+  },
+  conversations: {
+    label: 'Conversations',
+    defaultSort: 'started_at',
+    defaultDir: 'desc',
+    searchable: ['channel', 'status', 'outcome', 'summary'],
+    computed: {
+      message_count: '(SELECT count(*) FROM conversation_messages m WHERE m.conversation_id = t.id)',
+    },
+  },
+  kb_documents: {
+    label: 'Knowledge',
+    defaultSort: 'title',
+    searchable: ['title', 'body', 'source'],
+    computed: {
+      chunk_count: '(SELECT count(*) FROM kb_chunks k WHERE k.document_id = t.id)',
+    },
+  },
 };
 
 // Columns that are bookkeeping rather than information, left out of exports.

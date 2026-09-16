@@ -27,6 +27,16 @@ const { ToolError } = require('./records');
  * achieves is a proposal that gets declined.
  */
 
+/**
+ * The list endpoints do not agree on a name. DocDesk's generic table layer
+ * answers with { rows }, the controllers written for the front desk answer with
+ * { items }, and a tool that guesses wrong silently sees an empty list and
+ * tells somebody the business offers nothing.
+ */
+function listOf(result) {
+  return result?.rows || result?.items || [];
+}
+
 function obj(properties, required = []) {
   return { type: 'object', properties, required };
 }
@@ -63,8 +73,7 @@ async function shopContext() {
 
 /** Finds one service by name, and says so plainly when it cannot. */
 async function findService(name) {
-  const { items } = await api.get('/services', { pageSize: 100 });
-  const active = items.filter((s) => s.is_active);
+  const active = listOf(await api.get('/services', { pageSize: 100 })).filter((s) => s.is_active);
   if (!name) {
     if (active.length === 1) return active[0];
     throw new ToolError(`Which one? ${active.map((s) => s.name).join(', ')}`);
@@ -79,8 +88,7 @@ async function findService(name) {
 }
 
 async function findResource(name, serviceId) {
-  const { items } = await api.get('/resources', { pageSize: 100 });
-  const active = items.filter((r) => r.is_active);
+  const active = listOf(await api.get('/resources', { pageSize: 100 })).filter((r) => r.is_active);
   if (!name) return null; // null means "whoever is free"
   const needle = String(name).trim().toLowerCase();
   const matches = active.filter((r) => r.name.toLowerCase().includes(needle));
@@ -92,7 +100,7 @@ async function findResource(name, serviceId) {
 async function findCustomer(name) {
   if (!name) return null;
   const phone = parsePhone(name);
-  const { items } = await api.get('/customers', { search: phone ? phone.national : String(name), pageSize: 10 });
+  const items = listOf(await api.get('/customers', { search: phone ? phone.national : String(name), pageSize: 10 }));
   if (!items.length) return null;
   if (items.length === 1) return items[0];
   const needle = String(name).trim().toLowerCase();
@@ -103,12 +111,11 @@ async function findCustomer(name) {
 
 async function findAppointment({ reference, customer, when }) {
   if (reference) {
-    const { items } = await api.get('/appointments', { search: String(reference), pageSize: 10 });
-    if (items.length === 1) return items[0];
+    const byReference = listOf(await api.get('/appointments', { search: String(reference), pageSize: 10 }));
+    if (byReference.length === 1) return byReference[0];
   }
   const params = { pageSize: 50, from: new Date(Date.now() - 86400000).toISOString() };
-  const { items } = await api.get('/appointments', params);
-  let candidates = items.filter((a) => !['cancelled', 'completed', 'no_show'].includes(a.status));
+  let candidates = listOf(await api.get('/appointments', params)).filter((a) => !['cancelled', 'completed', 'no_show'].includes(a.status));
 
   if (customer) {
     const needle = String(customer).trim().toLowerCase();
@@ -179,9 +186,9 @@ const TOOLS = {
     description: 'What can be booked, how long each takes and what it costs.',
     parameters: obj({}),
     async run() {
-      const [{ items }, context] = await Promise.all([api.get('/services', { pageSize: 100 }), shopContext()]);
+      const [services, context] = await Promise.all([api.get('/services', { pageSize: 100 }), shopContext()]);
       return {
-        data: items.filter((s) => s.is_active).map((s) => ({
+        data: listOf(services).filter((s) => s.is_active).map((s) => ({
           name: s.name,
           minutes: s.duration_minutes,
           price: Number(s.price) > 0 ? money(s.price, context.currency) : 'not set',
@@ -318,10 +325,11 @@ const TOOLS = {
     description: 'Whether an item is in stock, and its selling price.',
     parameters: obj({ item: { type: 'string' } }, ['item']),
     async run({ item }) {
-      const [{ items }, context] = await Promise.all([
+      const [products, context] = await Promise.all([
         api.get('/products', { search: String(item), pageSize: 5 }),
         shopContext(),
       ]);
+      const items = listOf(products);
       if (!items.length) return { data: { found: false, note: `Nothing matching "${item}".` } };
 
       // In stock yes or no, and the selling price. Never the count, never the
@@ -345,7 +353,7 @@ const TOOLS = {
     async run({ who }) {
       const found = await findCustomer(who);
       if (!found) return { data: { found: false } };
-      const { items } = await api.get('/appointments', { customer_id: found.id, pageSize: 5 });
+      const items = listOf(await api.get('/appointments', { customer_id: found.id, pageSize: 5 }));
       return {
         data: {
           found: true,

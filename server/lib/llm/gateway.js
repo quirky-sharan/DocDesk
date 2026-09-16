@@ -268,6 +268,16 @@ async function handle(error, { candidate, tried, body, adapter }) {
       return true;
 
     case ACTIONS.PARK_MODEL:
+      if (error.errorClass === 'capability_missing') {
+        // The model is fine for ordinary chat; it just cannot take a tool
+        // schema. Record that rather than disabling it, so it stays useful for
+        // the small tier and is never offered for tools again.
+        const missing = /tool/i.test(error.message || '') ? 'tools' : 'json';
+        await registry.removeCapability(candidate.provider, candidate.model, missing);
+        console.warn(`[llm] ${candidate.provider}/${candidate.model} cannot do ${missing}; noted and re-routing`);
+        tried.add(candidate.model);
+        return true;
+      }
       if (error.errorClass === 'model_missing') {
         await registry.disableModel(candidate.provider, candidate.model, error.message);
         await usage.note({
@@ -339,9 +349,15 @@ async function handle(error, { candidate, tried, body, adapter }) {
 
 /** The next model worth trying: preference order, then whoever frees up soonest. */
 function pickNext(pool, tried, body, maxWaitMs) {
-  const usable = pool.filter(
-    (c) => !tried.has(c.model) && !tried.has(`${c.provider} provider`)
-  );
+  const usable = pool.filter((c) => {
+    if (tried.has(c.model) || tried.has(`${c.provider} provider`)) return false;
+    // A model whose context window cannot hold the prompt is not a candidate.
+    // Sending it anyway buys a guaranteed round trip and an overflow error -
+    // Groq's allam-2-7b holds 4,096 tokens and the tool schema alone is bigger.
+    const needed = estimateTokens(body, c.tokenizerFactor);
+    if (c.contextWindow && needed > c.contextWindow * 0.9) return false;
+    return true;
+  });
   if (!usable.length) return null;
 
   const withWaits = usable.map((candidate) => ({
