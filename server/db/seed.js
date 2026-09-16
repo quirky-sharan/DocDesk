@@ -519,10 +519,14 @@ function simulateDeficits(story) {
 
 const BUSINESS_TABLES = [
   'payments', 'sale_items', 'sales', 'purchase_order_items', 'purchase_orders', 'stock_movements',
-  'message_log', 'products', 'categories', 'customers', 'suppliers', 'settings',
+  'message_log', 'products', 'categories', 'customers', 'suppliers',
 ];
 
-/** Removes every business record (files and the audit trail are kept) and restarts numbering. */
+/**
+ * Removes every business record and restarts numbering. The shop's own details
+ * (settings), its files, saved queries and the audit trail are kept - clearing
+ * the records you entered should not also forget your name and currency.
+ */
 async function clear() {
   return db.transaction(
     async (tx) => {
