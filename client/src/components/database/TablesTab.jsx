@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Check, Columns3, Copy, FileCode2, History, KeyRound, Link2, ListTree, Lock, Search, Table2, TerminalSquare, Zap,
+  Check, Columns3, Copy, Download, FileCode2, History, KeyRound, Link2, ListTree, Lock, Search, Table2, TerminalSquare, Zap,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { Badge, ErrorNote, Pagination, SearchInput, SegmentedControl } from '../ui';
-import ResultGrid from './ResultGrid';
+import ResultGrid, { toCsv } from './ResultGrid';
 import RowInspector from './RowInspector';
 import { MONO_FONT } from './SqlEditor';
 import { TOKEN_COLORS, tokenize } from './sql';
@@ -136,6 +136,26 @@ function DataView({ table, onOpenTable }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [inspecting, setInspecting] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+
+  // Downloads what a plain SELECT returns, up to the console's row limit.
+  async function download() {
+    setDownloading(true);
+    try {
+      const result = await api.db.query(`SELECT * FROM ${table} ORDER BY 1 LIMIT 1000`);
+      const blob = new Blob([toCsv(result.columns, result.rows)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${table}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -160,6 +180,9 @@ function DataView({ table, onOpenTable }) {
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <SearchInput value={search} onChange={setSearch} placeholder="Search any column…" />
         {data && <span className="text-[12.5px] text-ink-3">Newest first · click a row number to open it · click a cell to copy</span>}
+        <button type="button" className="btn-secondary btn-sm ml-auto" disabled={downloading || !data?.total} onClick={download}>
+          <Download size={14} /> {downloading ? 'Preparing…' : 'CSV'}
+        </button>
       </div>
       <ErrorNote error={error} onDismiss={() => setError(null)} />
       {!data ? (

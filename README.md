@@ -124,11 +124,11 @@ downloading.
 | Tab | |
 |---|---|
 | Overview | engine, size, object counts, a live query pulse and a 3D core that glows as queries run |
-| Tables | browse rows, columns, indexes, constraints, triggers and the `CREATE TABLE` for any table |
+| Tables | browse rows, columns, indexes, constraints, triggers and the `CREATE TABLE` for any table; open any row to see what it links to, what links back, and everything that ever happened to it |
 | Diagram | an interactive ER diagram — drag tables, trace relationships, crow's-foot ends |
-| SQL | a SQL workbench: highlighting, autocomplete, examples, history, results grid, charts, CSV, and a visual **EXPLAIN** plan |
+| SQL | a SQL workbench: highlighting, autocomplete, examples, history, results grid, charts, CSV and a visual **EXPLAIN** plan — plus a point-and-click builder that writes the SQL for you, and saved queries kept in the database itself |
 | Activity | the audit trail, filterable by table, action and who did it, with before/after diffs |
-| Performance | throughput, p50/p95, slowest query shapes, cache hit rate and index usage |
+| Performance | throughput, p50/p95, slowest query shapes, cache hit rate, index usage and per-table health with advice on what to index or vacuum |
 | Health | integrity checks that cross-check every derived total, with one-click repairs, plus maintenance |
 | Backups | back up now, download, restore from a file or a saved backup, export as SQL |
 
@@ -147,6 +147,7 @@ orb, and ask or tell it anything:
 - *"Show me unpaid sales"* — it opens Sales and sets the filter for you
 - *"Sell 3 sticky notes to Priya, paid by UPI"* — and hands you the receipt
 - *"Order everything that's running low"* · *"Back up the database now"*
+- *"What's the average number of items per sale?"* — when no other tool fits, it works the answer out with a read-only query
 
 **It never changes anything without asking.** Anything that adds, edits,
 deletes or orders shows a card with exactly what will happen and waits for you
