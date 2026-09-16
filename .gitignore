@@ -44,6 +44,8 @@ server/uploads/
 # Embedded PostgreSQL data and local backups (never commit a database)
 server/db/pgdata/
 server/db/pgdata.lock
+# A data directory set aside after a bad shutdown. Never source.
+server/db/pgdata.corrupt-*/
 server/backups/
 server/db/*.sqlite.imported-*
 # Every throwaway database a test or a probe makes. Matched by prefix so a
