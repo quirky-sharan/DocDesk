@@ -40,8 +40,13 @@ async function queueSaleConfirmation(tx, sale, customer) {
  */
 async function sendQueued({ limit = 50 } = {}) {
   return db.transaction(async (tx) => {
+    // Notes and calls are records of something said, not something to send.
+    // Marking them 'sent' would claim an outgoing message that never existed,
+    // and they would vanish from the front desk's list of things to deal with.
     const { rows: pending } = await tx.query(
-      `SELECT * FROM message_log WHERE status = 'queued' ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED`,
+      `SELECT * FROM message_log
+        WHERE status = 'queued' AND channel NOT IN ('note', 'call')
+        ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED`,
       [limit]
     );
     const sent = [];

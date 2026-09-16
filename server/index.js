@@ -66,6 +66,11 @@ async function prepareDatabase() {
   // yesterday's allowances. Deliberately not awaited by the request middleware:
   // DocDesk answers with no AI at all, so nothing waits on this.
   llm.warmUp().catch(() => {});
+  // A daily limit or a pinned model set months ago must still be in force after
+  // a restart, so the saved settings are pushed into the gateway on the way up.
+  require('./controllers/settings').applyAiOverrides().catch((err) => {
+    console.warn(`  [ai] could not apply saved AI settings: ${err.message}`);
+  });
   return applied;
 }
 

@@ -1,7 +1,7 @@
 const db = require('../db');
 const { listRows, readListQuery } = require('../lib/tables');
-const { fail } = require('../lib/validate');
-const { sendQueued } = require('../lib/messaging');
+const { fail, text, oneOf } = require('../lib/validate');
+const { sendQueued, queueMessage } = require('../lib/messaging');
 
 exports.list = async (req, res, next) => {
   try {
@@ -40,6 +40,26 @@ exports.remove = async (req, res, next) => {
     if (!rows.length) throw fail('Message not found', 404);
     await db.query('DELETE FROM message_log WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Queues a message the front desk took. It goes into the same message_log the
+// rest of DocDesk uses rather than a second table, so one page shows everything
+// waiting to go out and sendQueued() picks it up with the rest.
+exports.create = async (req, res, next) => {
+  try {
+    const message = await queueMessage(null, {
+      channel: oneOf(req.body?.channel, 'Channel', ['email', 'sms', 'call', 'note'], { fallback: 'note' }),
+      recipient: text(req.body?.recipient, 'Contact', { max: 150 }),
+      subject: text(req.body?.subject, 'Subject', { max: 200 }),
+      body: text(req.body?.body, 'Message', { required: true, max: 4000 }),
+      triggerType: text(req.body?.trigger_type, 'Kind', { max: 60 }) || 'reception_message',
+      relatedType: text(req.body?.related_type, 'Related to', { max: 40 }),
+      relatedId: req.body?.related_id ? Number(req.body.related_id) : null,
+    });
+    res.status(201).json(message);
   } catch (err) {
     next(err);
   }
