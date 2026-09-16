@@ -861,3 +861,78 @@
     animation: none;
   }
 }
+
+/* ===========================================================================
+   Printing — a report on paper, not a screenshot of the app
+=========================================================================== */
+@media print {
+  /* Paper is white whatever the screen is doing. */
+  :root,
+  :root[data-theme='dark'] {
+    --c-canvas: 255 255 255;
+    --c-surface: 255 255 255;
+    --c-elevated: 255 255 255;
+    --c-sunken: 250 250 252;
+    --c-text: 20 20 22;
+    --c-text-2: 70 70 78;
+    --c-text-3: 110 110 120;
+    --line: rgb(0 0 0 / 0.12);
+    --line-strong: rgb(0 0 0 / 0.2);
+    --wash: rgb(0 0 0 / 0.03);
+    --wash-strong: rgb(0 0 0 / 0.06);
+    --shadow-xs: none;
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+    --shadow-xl: none;
+    --edge-highlight: none;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  /* The chrome around the page: navigation, search, the assistant, the backdrop. */
+  .app-backdrop,
+  header.sticky,
+  aside[aria-label='DocDesk assistant'],
+  [aria-label='Open the DocDesk assistant'],
+  .assistant-launcher,
+  body > div > div > aside,
+  .glass.fixed,
+  canvas {
+    display: none !important;
+  }
+
+  main {
+    height: auto !important;
+    overflow: visible !important;
+    padding-left: 0 !important;
+  }
+
+  main > div > div {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Keep a card, a table row or a chart from being cut in half by a page break. */
+  .card,
+  .panel,
+  section,
+  tr,
+  li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}
