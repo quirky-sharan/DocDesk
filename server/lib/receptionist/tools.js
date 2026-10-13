@@ -328,11 +328,8 @@ const TOOLS = {
       if (dir) params.set('dir', dir);
       const url = `/api/export/${table}?${params}`;
       // Check it renders before telling the user it's ready.
-      const check = await fetch(`http://127.0.0.1:${Number(process.env.PORT) || 5000}${url}`, { method: 'GET' });
-      if (!check.ok) {
-        const body = await check.json().catch(() => ({}));
-        throw new ToolError(body.error || 'That export could not be created.');
-      }
+      const check = await api.probe(`/export/${table}`, Object.fromEntries(params));
+      if (!check.ok) throw new ToolError(check.error || 'That export could not be created.');
       const labelText = `${TABLE_META[table].plural} as ${format.toUpperCase()}`;
       return {
         data: { downloading: labelText },

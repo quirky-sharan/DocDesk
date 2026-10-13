@@ -72,11 +72,15 @@ const google = openaiCompatible({
     return null;
   },
 });
-// Discovery talks to the native endpoint with the key in the query string,
-// which is the one shape Google does not accept as a bearer token.
+// Discovery talks to the native endpoint, which does not take the key as a
+// bearer token. It goes in Google's own header rather than the query string:
+// an address ends up in logs, proxies and error messages, and a key must not.
 google.listModels = async ({ apiKey, timeoutMs = 12000 } = {}) => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey || '')}`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models';
+  const response = await fetch(url, {
+    headers: { 'x-goog-api-key': String(apiKey || '') },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     throw google.mapError(response.status, detail, response.headers);

@@ -9,6 +9,8 @@ import GoogleMark from '../components/landing/GoogleMark';
 import { useTheme } from '../hooks/useTheme';
 import '../components/landing/landing.css';
 
+const MIN_NEW_PASSWORD = 8;
+
 /**
  * Sign in and create an account, on one screen.
  *
@@ -83,8 +85,10 @@ export default function AuthPage() {
       emailField.current?.focus();
       return;
     }
-    if (password.length < 6) {
-      setError(creating ? 'Pick a password of at least 6 characters.' : 'Enter your password.');
+    // A new password has to be worth having. Existing accounts sign in with
+    // whatever they already chose.
+    if (creating ? password.length < MIN_NEW_PASSWORD : !password) {
+      setError(creating ? `Pick a password of at least ${MIN_NEW_PASSWORD} characters.` : 'Enter your password.');
       return;
     }
 
@@ -92,7 +96,7 @@ export default function AuthPage() {
     try {
       if (creating) await signUp(email, password, name);
       else await signIn(email, password);
-      // The effect above navigates as soon as Firebase reports the new user.
+      // The effect above navigates as soon as the session exists.
     } catch (caught) {
       setError(readableAuthError(caught));
       setBusy('');
@@ -233,9 +237,9 @@ export default function AuthPage() {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       required
-                      minLength={6}
+                      minLength={creating ? MIN_NEW_PASSWORD : undefined}
                       autoComplete={creating ? 'new-password' : 'current-password'}
-                      placeholder={creating ? 'At least 6 characters' : 'Your password'}
+                      placeholder={creating ? `At least ${MIN_NEW_PASSWORD} characters` : 'Your password'}
                       onChange={(e) => setPassword(e.target.value)}
                     />
                     <button

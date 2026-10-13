@@ -248,7 +248,7 @@ function ProfileMenu() {
   const anchor = useRef(null);
   const [open, setOpen] = useState(false);
   const { businessName } = useSettings();
-  const { user, signOut } = useAuth();
+  const { user, signOut, can, signInRequired } = useAuth();
   const close = useCallback(() => setOpen(false), []);
 
   const name = displayNameFor(user) || businessName;
@@ -269,20 +269,25 @@ function ProfileMenu() {
         <div className="divider mx-1 mb-1" />
         <MenuItem as={Link} to="/settings" icon={Building2} onClick={close}>Business details</MenuItem>
         <MenuItem as={Link} to="/files" icon={FolderOpen} onClick={close}>Your files</MenuItem>
-        <MenuItem as={Link} to="/database" icon={Database} onClick={close}>Database</MenuItem>
+        {can('manager') && <MenuItem as={Link} to="/database" icon={Database} onClick={close}>Database</MenuItem>}
         <MenuItem as={Link} to="/settings" icon={Settings} onClick={close}>Settings</MenuItem>
-        <div className="divider mx-1 my-1" />
-        <MenuItem
-          icon={LogOut}
-          onClick={() => {
-            close();
-            // Signing out drops the whole private tree and the landing page
-            // takes over; no navigation needed.
-            signOut().catch(() => {});
-          }}
-        >
-          Sign out
-        </MenuItem>
+        {/* Nothing to sign out of where sign-in has been switched off. */}
+        {signInRequired && (
+          <>
+            <div className="divider mx-1 my-1" />
+            <MenuItem
+              icon={LogOut}
+              onClick={() => {
+                close();
+                // Signing out drops the whole private tree and the landing page
+                // takes over; no navigation needed.
+                signOut().catch(() => {});
+              }}
+            >
+              Sign out
+            </MenuItem>
+          </>
+        )}
       </Popover>
     </>
   );

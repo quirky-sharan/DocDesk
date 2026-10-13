@@ -7,7 +7,7 @@
 const CONSTRAINT_MESSAGES = {
   products_sku_key: 'That code (SKU) is already used by another product.',
   categories_name_key: 'There is already a category with that name.',
-  users_username_key: 'That username is taken.',
+  users_firebase_uid_key: 'That account is already on the team.',
   sales_reference_key: 'That receipt number is already in use.',
   purchase_orders_reference_key: 'That order number is already in use.',
   products_stock_quantity_check: 'There is not enough stock for that.',

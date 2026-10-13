@@ -26,13 +26,26 @@ const WRITE_DML = new Set(['insert', 'update', 'delete', 'merge']);
 // the server's files. Not allowed in either mode.
 const DENIED_FUNCTIONS = [
   'set_config', 'pg_terminate_backend', 'pg_cancel_backend', 'pg_reload_conf', 'pg_rotate_logfile',
-  'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'pg_stat_file', 'lo_import', 'lo_export',
+  'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'pg_ls_logdir', 'pg_ls_waldir', 'pg_ls_tmpdir', 'pg_stat_file',
+  'lo_import', 'lo_export', 'lo_get', 'lo_put', 'lo_from_bytea',
   'dblink', 'dblink_exec', 'pg_advisory_lock', 'pg_advisory_xact_lock', 'pg_promote', 'txid_current_snapshot',
+  // The embedded database has one connection: a query that only sleeps holds
+  // everybody else up until the time limit ends it.
+  'pg_sleep', 'pg_sleep_for', 'pg_sleep_until',
 ];
 
-/** Splits SQL into tokens we care about, skipping strings and comments. */
+/**
+ * Splits SQL into tokens we care about, skipping strings and comments.
+ *
+ * `names` holds what was written inside double quotes. A quoted name is still
+ * a name - "set_config"(...) calls exactly what set_config(...) does - so the
+ * list of functions the console will not run has to be checked against those
+ * too, or wrapping one in quotes walks straight past it.
+ */
 function scan(sql) {
   const words = [];
+  const names = [];
+  let unicodeName = false;
   let statements = 0;
   let sawContent = false;
   let i = 0;
@@ -58,16 +71,25 @@ function scan(sql) {
     }
     if (ch === "'" || ch === '"') {
       sawContent = true;
+      // U&"\0073et_config" spells a name in escapes, which no list of names
+      // can be compared against.
+      if (ch === '"' && sql[i - 1] === '&' && /u/i.test(sql[i - 2] || '')) unicodeName = true;
+      const start = i + 1;
+      let end = n;
       i++;
       while (i < n) {
         if (sql[i] === ch) {
           if (sql[i + 1] === ch) { i += 2; continue; }
+          end = i;
           i++;
           break;
         }
         i++;
       }
-      if (ch === '"') words.push('"quoted"');
+      if (ch === '"') {
+        words.push('"quoted"');
+        names.push(sql.slice(start, end).replace(/""/g, '"').toLowerCase());
+      }
       continue;
     }
     if (ch === '$') {
@@ -98,7 +120,7 @@ function scan(sql) {
     i++;
   }
   if (sawContent) statements++;
-  return { words, statements };
+  return { words, names, unicodeName, statements };
 }
 
 /** What a statement is: read, write, or something the console won't run. */
@@ -107,17 +129,18 @@ function classify(sql) {
   if (!text.trim()) throw fail('Type a query first.');
   if (text.length > 100_000) throw fail('That query is too long.');
 
-  const { words, statements } = scan(text);
+  const { words, names, unicodeName, statements } = scan(text);
   if (statements === 0) throw fail('Type a query first.');
   if (statements > 1) throw fail('Run one statement at a time - remove the extra semicolon-separated statements.');
+  if (unicodeName) throw fail('Names written as U&"..." escapes are not available in the SQL console. Write the name out.');
 
   const tokens = words.filter((w) => w !== ';');
   const first = tokens[0] || '';
   const second = tokens[1] || '';
 
-  for (let k = 0; k < tokens.length; k++) {
-    if (DENIED_FUNCTIONS.includes(tokens[k])) {
-      throw fail(`"${tokens[k]}" is not available in the SQL console.`);
+  for (const name of [...tokens, ...names]) {
+    if (DENIED_FUNCTIONS.includes(name)) {
+      throw fail(`"${name}" is not available in the SQL console.`);
     }
   }
 

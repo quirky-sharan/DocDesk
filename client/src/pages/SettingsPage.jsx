@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Bot, Building2, Check, CircleDot, Clock, Command, Database, ExternalLink, Globe2, HardDrive, Keyboard, Monitor, Moon,
-  Palette, Receipt, RefreshCw, Save, Sparkles, Sun, Trash2, Wallet, Wand2,
+  Palette, Receipt, RefreshCw, Save, ShieldCheck, Sparkles, Sun, Trash2, Wallet, Wand2,
 } from 'lucide-react';
 import { api } from '../api/client';
+import { useAuth } from '../auth/AuthProvider';
+import TeamGroup from '../components/TeamGroup';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../hooks/useTheme';
-import { Badge, Button, ConfirmButton, ErrorNote, Field, PageHeader, useToast, SegmentedControl } from '../components/ui';
+import { Badge, Button, ConfirmButton, ErrorNote, Field, Notice, PageHeader, useToast, SegmentedControl } from '../components/ui';
 import { Reveal } from '../components/motion/Reveal';
 import { cn } from '../lib/cn';
 import brand from '@shared/brand.json';
@@ -21,6 +23,7 @@ const SECTIONS = [
   ['region', 'Region', Globe2],
   ['appearance', 'Appearance', Palette],
   ['receptionist', brand.receptionist, Bot],
+  ['team', 'Team', ShieldCheck, 'owner'],
   ['data', 'Data', Database],
   ['shortcuts', 'Shortcuts', Keyboard],
 ];
@@ -35,6 +38,9 @@ const ZONES = (() => {
 
 export default function SettingsPage() {
   const { reload: reloadSettings } = useSettings();
+  const { can } = useAuth();
+  // Anyone on the team can read these; changing them is a manager's.
+  const mayEdit = can('manager');
   const [values, setValues] = useState(null);
   const [saved, setSaved] = useState(null);
   const [error, setError] = useState(null);
@@ -77,11 +83,16 @@ export default function SettingsPage() {
     <div>
       <PageHeader title="Settings" subtitle="Your business details, how DocDesk looks, and the data behind it." eyebrow="Preferences" icon={Wand2} />
       <ErrorNote error={error} onDismiss={() => setError(null)} />
+      {!mayEdit && (
+        <Notice tone="info" title="You can look, but not change">
+          Business settings can only be changed by a manager or the owner. How DocDesk looks on this screen is yours to set.
+        </Notice>
+      )}
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
         <nav className="hidden lg:block" aria-label="Settings sections">
           <ul className="sticky top-24 space-y-0.5">
-            {SECTIONS.map(([id, label, Icon]) => (
+            {SECTIONS.filter(([, , , role]) => !role || can(role)).map(([id, label, Icon]) => (
               <li key={id}>
                 <a href={`#settings-${id}`} onClick={(e) => { e.preventDefault(); document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="flex items-center gap-2.5 rounded-[12px] px-3 py-2 text-[13.5px] text-ink-2 transition-colors hover:bg-[var(--wash)] hover:text-ink">
                   <Icon size={15} /> {label}
@@ -145,6 +156,7 @@ export default function SettingsPage() {
 
           <AppearanceGroup />
           <ReceptionistGroup values={values} set={set} />
+          <TeamGroup Group={Group} />
           <DataGroup />
           <ShortcutsGroup />
         </div>
@@ -152,7 +164,7 @@ export default function SettingsPage() {
 
       {/* A floating save bar appears only when something has changed. */}
       <AnimatePresence>
-        {dirty && (
+        {dirty && mayEdit && (
           <motion.div
             initial={{ y: 80, opacity: 0, scale: 0.96 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}

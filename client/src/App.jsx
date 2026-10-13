@@ -1,4 +1,5 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
+import { Clock, LogOut, RefreshCw } from 'lucide-react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { MotionConfig, motion } from 'motion/react';
 import Sidebar from './components/shell/Sidebar';
@@ -13,6 +14,7 @@ import { ReceptionistProvider, useReceptionist } from './receptionist/Receptioni
 import ReceptionistPanel, { ReceptionistLauncher } from './receptionist/ReceptionistPanel';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { Mark } from './components/landing/Wordmark';
+import Button from './components/ui/Button';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import { cn } from './lib/cn';
@@ -86,6 +88,12 @@ function Gate() {
 
   if (!ready) return <Booting />;
 
+  // Signed in, but not let in. Having an account is not what grants access -
+  // anybody can create one - so nothing of the shop's mounts until an owner
+  // has said yes. (The server refuses every request from this account anyway;
+  // this is what the person sees instead of a page full of errors.)
+  if (user && user.status !== 'active') return <Waiting />;
+
   if (!user) {
     // The landing page is the front door; every other address remembers where
     // it was headed and asks for a sign-in first.
@@ -113,7 +121,48 @@ function Gate() {
   );
 }
 
+/** Shown to an account that exists but has not been let in yet. */
+function Waiting() {
+  const { user, refresh, signOut } = useAuth();
+  const [checking, setChecking] = useState(false);
+  const turnedOff = user.status === 'disabled';
+
+  async function check() {
+    setChecking(true);
+    try {
+      await refresh();
+    } catch {
+      // Still waiting, or offline: either way this screen is still the right one.
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <div className="grid min-h-[100svh] place-items-center px-6">
+      <div className="w-full max-w-[26rem] text-center">
+        <span className="mx-auto mb-6 grid h-14 w-14 place-items-center rounded-full" style={{ background: 'var(--wash-strong)' }}>
+          <Clock size={24} className="text-ink-2" />
+        </span>
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-[-0.03em]">
+          {turnedOff ? 'This account is switched off' : 'Waiting to be let in'}
+        </h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-ink-2">
+          {turnedOff
+            ? 'The owner has turned this account off. Ask them to switch it back on.'
+            : <>You are signed in as <span className="font-medium text-ink">{user.email || 'this account'}</span>, and the owner of this DocDesk has to let you in before you can see anything. Ask them to open <span className="font-medium text-ink">Settings → Team</span> and approve you.</>}
+        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+          {!turnedOff && <Button icon={RefreshCw} loading={checking} onClick={check}>Check again</Button>}
+          <Button variant="secondary" icon={LogOut} onClick={() => signOut()}>Sign out</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Shell() {
+  const { can } = useAuth();
   const { open } = useReceptionist();
   const { collapsed } = useShell();
   const { scrollerRef, contentRef } = useSmoothScroll();
@@ -153,7 +202,9 @@ function Shell() {
                   <Route path="/files" element={<FilesPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/messages" element={<MessagesPage />} />
-                  <Route path="/database" element={<DatabasePage />} />
+                  {/* The database console is a manager's; for anyone else the
+                      address simply goes home. The server enforces it either way. */}
+                  <Route path="/database" element={can('manager') ? <DatabasePage /> : <Navigate to="/" replace />} />
                   <Route path="/ai" element={<AiPage />} />
                   <Route path="/knowledge" element={<KnowledgePage />} />
                   <Route path="/settings" element={<SettingsPage />} />

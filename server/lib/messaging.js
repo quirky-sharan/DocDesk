@@ -1,4 +1,5 @@
 const db = require('../db');
+const { maskContact } = require('./redact');
 
 // Nothing here sends anything. Messages are written to message_log as 'queued'
 // and the mock sender marks them 'sent', so what would go out is visible and
@@ -51,7 +52,7 @@ async function sendQueued({ limit = 50 } = {}) {
     );
     const sent = [];
     for (const message of pending) {
-      console.log(`[messaging:mock] would send via ${message.channel} to ${message.recipient || '(no recipient)'}: ${message.subject}`);
+      console.log(`[messaging:mock] would send via ${message.channel} to ${maskContact(message.recipient) || '(no recipient)'} (message ${message.id})`);
       const { rows } = await tx.query(
         `UPDATE message_log SET status = 'sent', sent_at = now() WHERE id = $1 RETURNING *`,
         [message.id]

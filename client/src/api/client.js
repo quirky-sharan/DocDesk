@@ -19,30 +19,68 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.body = body;
+    // Why it was refused, where the server said: signed_out, pending, disabled,
+    // forbidden, csrf, rate_limited.
+    this.code = body?.code || null;
   }
+}
+
+// The session itself is an HttpOnly cookie: the browser sends it, and nothing
+// in this file - or any script - can read it. What the page does hold is the
+// anti-forgery token, kept here in memory and sent with every change. Another
+// site can make this browser send the cookie; it cannot know this.
+let csrfToken = null;
+let sessionEnded = null;
+
+export function setCsrfToken(token) {
+  csrfToken = token || null;
+}
+
+/** Called when the server says the session is over, so the app can show the way back in. */
+export function onSessionEnded(handler) {
+  sessionEnded = handler;
+}
+
+const CHANGES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function withSession(options = {}, headers = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  return {
+    // 'include' rather than the default so the cookie also travels when the
+    // API is deployed at a different address from the web app.
+    credentials: 'include',
+    ...options,
+    headers: {
+      ...headers,
+      ...(CHANGES.has(method) && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+      ...options.headers,
+    },
+  };
+}
+
+function failure(response, body, fallback) {
+  // Every error our API produces is JSON, so a non-JSON error body means the
+  // request never reached it - the Vite proxy in dev, or a gateway in prod,
+  // answered instead. Report that plainly rather than echoing a bare 500.
+  if (!body) return new ApiError(UNREACHABLE, response.status);
+  const error = new ApiError(body.error || `${fallback} (${response.status})`, response.status, body);
+  // Signed out, turned away, or no longer let in: the whole app needs to know,
+  // not just whichever page happened to make the call.
+  if (['signed_out', 'pending', 'disabled'].includes(error.code)) sessionEnded?.(error.code);
+  return error;
 }
 
 async function request(path, options = {}) {
   let response;
   try {
-    response = await fetch(`${BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    });
+    response = await fetch(`${BASE}${path}`, withSession(options, { 'Content-Type': 'application/json' }));
   } catch {
     // fetch only rejects when nothing answered at all.
     throw new ApiError(UNREACHABLE, 0);
   }
 
   const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    // Every error our API produces is JSON, so a non-JSON error body means the
-    // request never reached it - the Vite proxy in dev, or a gateway in prod,
-    // answered instead. Report that plainly rather than echoing a bare 500.
-    if (!body) throw new ApiError(UNREACHABLE, response.status);
-    throw new ApiError(body.error || `Request failed (${response.status})`, response.status, body);
-  }
+  if (!response.ok) throw failure(response, body, 'Request failed');
   return body;
 }
 
@@ -65,15 +103,12 @@ const send = (path, method, payload) =>
 async function sendForm(path, formData, method = 'POST') {
   let response;
   try {
-    response = await fetch(`${BASE}${path}`, { method, body: formData });
+    response = await fetch(`${BASE}${path}`, withSession({ method, body: formData }));
   } catch {
     throw new ApiError(UNREACHABLE, 0);
   }
   const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    if (!body) throw new ApiError(UNREACHABLE, response.status);
-    throw new ApiError(body.error || `Upload failed (${response.status})`, response.status, body);
-  }
+  if (!response.ok) throw failure(response, body, 'Upload failed');
   return body;
 }
 
@@ -88,6 +123,18 @@ function resource(path) {
 }
 
 export const api = {
+  // Signing in is Firebase's job; these trade its answer for a session here.
+  auth: {
+    session: () => request('/auth/session'),
+    signIn: (idToken) => send('/auth/session', 'POST', { idToken }),
+    signOut: () => request('/auth/session', { method: 'DELETE' }),
+  },
+  team: {
+    list: () => request('/team'),
+    update: (id, changes) => send(`/team/${id}`, 'PUT', changes),
+    remove: (id) => request(`/team/${id}`, { method: 'DELETE' }),
+    signOut: (id) => request(`/team/${id}/sign-out`, { method: 'POST' }),
+  },
   health: () => request('/health'),
   stats: () => request('/stats'),
   seed: () => request('/dev/seed', { method: 'POST' }),

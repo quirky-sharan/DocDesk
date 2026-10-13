@@ -10,6 +10,7 @@ import { useShell } from './ShellProvider';
 import { useSettings } from '../../lib/settings';
 import { useTheme } from '../../hooks/useTheme';
 import { useReceptionist } from '../../receptionist/ReceptionistProvider';
+import { useAuth } from '../../auth/AuthProvider';
 import { cn } from '../../lib/cn';
 import { spring, springSoft } from '../../lib/motion';
 import { useScrollLock } from './SmoothScroll';
@@ -52,7 +53,7 @@ export const NAV = [
     items: [
       { name: 'Files', path: '/files', icon: FolderOpen },
       { name: 'Messages', path: '/messages', icon: Bell, badge: 'queued' },
-      { name: 'Database', path: '/database', icon: Database },
+      { name: 'Database', path: '/database', icon: Database, role: 'manager' },
       { name: 'AI & models', path: '/ai', icon: Bot },
       { name: 'Settings', path: '/settings', icon: Settings },
     ],
@@ -117,6 +118,7 @@ function MobileDrawer({ onClose }) {
 function SidebarBody({ collapsed, layoutId }) {
   const { counts, setCollapsed } = useShell();
   const { businessName } = useSettings();
+  const { can } = useAuth();
 
   // Namespaced, so the desktop sidebar (hidden but mounted on a phone) and the
   // drawer never try to animate one shared pill between them.
@@ -150,7 +152,7 @@ function SidebarBody({ collapsed, layoutId }) {
                 <p className="px-3 pb-1 pt-1 text-[11.5px] font-medium text-ink-3">{group.label}</p>
               )}
               <div className="space-y-0.5">
-                {group.items.map((item) => (
+                {group.items.filter((item) => !item.role || can(item.role)).map((item) => (
                   <NavItem key={item.path} item={item} collapsed={collapsed} badge={item.badge ? counts[item.badge] : 0} />
                 ))}
               </div>

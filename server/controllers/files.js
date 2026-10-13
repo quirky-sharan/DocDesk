@@ -2,7 +2,7 @@ const fs = require('fs');
 const db = require('../db');
 const { listRows, readListQuery } = require('../lib/tables');
 const { fail, text, id } = require('../lib/validate');
-const { resolveStoredPath, deleteStored, MAX_FILE_BYTES, ALLOWED_LABEL } = require('../lib/storage');
+const { resolveStoredPath, deleteStored, contentDisposition, MAX_FILE_BYTES, ALLOWED_LABEL } = require('../lib/storage');
 
 const ATTACHABLE = ['product', 'sale', 'customer', 'supplier', 'purchase_order'];
 
@@ -118,13 +118,16 @@ exports.download = async (req, res, next) => {
     const inline = INLINE_SAFE.has(file.mime_type) && req.query.download !== '1';
     res.setHeader('Content-Type', file.mime_type);
     res.setHeader('Content-Length', file.size_bytes);
-    // Quotes are escaped so a filename containing one cannot break the header.
-    const safeName = file.original_name.replace(/"/g, "'");
-    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${safeName}"`);
+    // The name is whatever somebody called their file - quotes, accents, other
+    // alphabets - and a header can carry none of that raw.
+    res.setHeader('Content-Disposition', contentDisposition(inline ? 'inline' : 'attachment', file.original_name));
     // Uploaded content is user-supplied; stop the browser guessing a different
-    // type than we declared, and sandbox anything it does render.
+    // type than we declared, and sandbox anything it does render. The Files
+    // page previews in a frame, so DocDesk's own pages - and no one else's -
+    // may frame it.
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'");
 
     fs.createReadStream(fullPath).pipe(res);
   } catch (err) {

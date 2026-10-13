@@ -26,8 +26,14 @@ const FORMAT_VERSION = 1;
 const KEEP_AUTOMATIC = 14;
 
 // Parents before children, so every foreign key already has its target.
+//
+// users and sessions are deliberately absent. A backup is the business's
+// records; who may sign in is not one of them. If it were, restoring an old
+// file could quietly put back somebody who had been removed - or, restoring one
+// from before accounts existed, empty the list and make whoever signed in next
+// the owner.
 const TABLE_ORDER = [
-  'settings', 'users', 'saved_queries', 'categories', 'suppliers', 'customers', 'products', 'sales', 'sale_items',
+  'settings', 'saved_queries', 'categories', 'suppliers', 'customers', 'products', 'sales', 'sale_items',
   'payments', 'purchase_orders', 'purchase_order_items', 'stock_movements', 'message_log', 'files', 'audit_log',
 ];
 const REFERENCE_SEQUENCES = [

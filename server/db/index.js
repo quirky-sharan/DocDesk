@@ -4,6 +4,7 @@ const { AsyncLocalStorage } = require('async_hooks');
 const { EmbeddedEngine } = require('./engine/embedded');
 const { ServerEngine } = require('./engine/server');
 const monitor = require('./monitor');
+const { currentUserLabel } = require('../lib/auth/context');
 
 /**
  * The one database handle the whole server uses. It is always PostgreSQL:
@@ -11,12 +12,15 @@ const monitor = require('./monitor');
  *   DATABASE_URL set    -> a hosted Postgres through a connection pool
  *   DATABASE_URL unset  -> embedded Postgres in server/db/pgdata, zero setup
  *
- * On top of the engine this adds three things every caller gets for free:
+ * On top of the engine this adds four things every caller gets for free:
  *   - transactions that follow the call stack (AsyncLocalStorage), so a helper
  *     called inside a transaction joins it instead of deadlocking or escaping it
- *   - the "actor" (web / receptionist / sql-console / system) recorded against
- *     every change by the audit triggers
+ *   - the "actor" (web / receptionist / sql-console / system) and the signed-in
+ *     person, recorded against every change by the audit triggers
  *   - timing for every statement, for the Database page's performance view
+ *   - a data version that moves on every committed change, so anything cached
+ *     from the database can tell it is out of date without being told what
+ *     changed
  */
 
 const engine = process.env.DATABASE_URL
@@ -61,10 +65,20 @@ async function timed(sql, params, run) {
   }
 }
 
-function wrapClient(client) {
+// Counts committed changes. Caches store the number they were filled under and
+// treat any other number as a miss (see lib/cache.js).
+let dataVersion = 0;
+
+function wrapClient(client, state) {
   return {
-    query: (sql, params = [], options = {}) => timed(sql, params, () => client.query(sql, params, options)),
-    exec: (sql) => timed(sql, [], () => client.exec(sql)),
+    query: (sql, params = [], options = {}) => {
+      if (isWrite(sql)) state.wrote = true;
+      return timed(sql, params, () => client.query(sql, params, options));
+    },
+    exec: (sql) => {
+      state.wrote = true;
+      return timed(sql, [], () => client.exec(sql));
+    },
   };
 }
 
@@ -92,27 +106,38 @@ const db = {
   async exec(sql) {
     const store = context.getStore();
     if (store?.tx) return store.tx.exec(sql);
-    return timed(sql, [], () => engine.exec(sql));
+    const result = await timed(sql, [], () => engine.exec(sql));
+    dataVersion += 1;
+    return result;
   },
 
   /**
    * Runs `fn(tx)` in a transaction. Nested calls join the outer transaction.
    * Options: readOnly, timeoutMs, actor, settings ({ 'docdesk.x': 'on' } applied
-   * as transaction-local settings before `fn` runs).
+   * as transaction-local settings before `fn` runs), and quiet - for writes
+   * that change nothing anyone reads back (a session's "last used" stamp), so
+   * they do not invalidate what has been cached.
    */
-  async transaction(fn, { readOnly = false, timeoutMs, actor, settings } = {}) {
+  async transaction(fn, { readOnly = false, timeoutMs, actor, settings, quiet = false } = {}) {
     const store = context.getStore();
     if (store?.tx) return fn(store.tx);
 
-    return engine.transaction(async (client) => {
-      const tx = wrapClient(client);
+    const state = { wrote: false };
+    const result = await engine.transaction(async (client) => {
+      const tx = wrapClient(client, state);
       if (readOnly) await tx.query('SET TRANSACTION READ ONLY');
-      await tx.query("SELECT set_config('docdesk.actor', $1, true)", [actor || currentActor()]);
+      await tx.query(
+        "SELECT set_config('docdesk.actor', $1, true), set_config('docdesk.user', $2, true)",
+        [actor || currentActor(), currentUserLabel()]
+      );
       for (const [key, value] of Object.entries(settings || {})) {
         await tx.query('SELECT set_config($1, $2, true)', [key, String(value)]);
       }
       return context.run({ ...store, tx, actor: actor || currentActor() }, () => fn(tx));
     }, { timeoutMs });
+    // Only reached once the transaction has committed - a rollback throws.
+    if (state.wrote && !quiet) dataVersion += 1;
+    return result;
   },
 
   /** Runs `fn` with every change inside attributed to `actor`. */
@@ -122,6 +147,7 @@ const db = {
 
   currentActor,
   isWrite,
+  dataVersion: () => dataVersion,
 
   describe() {
     return engine.describe();

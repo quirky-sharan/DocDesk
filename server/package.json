@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
-    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",

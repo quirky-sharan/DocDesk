@@ -7,16 +7,20 @@ const backup = require('../lib/dbconsole/backup');
 const monitor = require('../db/monitor');
 const { listRows, readListQuery, invalidateSchemaCache } = require('../lib/tables');
 const { fail, text } = require('../lib/validate');
+const { requireRole } = require('../lib/auth/context');
+const { cacheStats } = require('../lib/cache');
+const rateLimit = require('../middleware/rateLimit');
 
 /**
  * The Database page's API: overview, schema browser, ER diagram, SQL console,
  * query plans, activity log, performance, integrity checks, backups.
  *
- * Operations that can change or replace data (running changes in the console,
- * restoring a backup, maintenance) are on by default for the embedded database
- * on this computer, and off for a hosted database unless DB_ADMIN=on - a
- * deployed DocDesk has no sign-in yet, so it should not offer them to anyone
- * who finds the address.
+ * Two locks, and both have to be open. Who may do what is decided per route
+ * (routes/index.js): a manager may look, the owner may change. On top of that,
+ * operations that can change or replace data - running changes in the console,
+ * restoring a backup, maintenance - are on by default for the embedded
+ * database on this computer and off for a hosted one unless DB_ADMIN=on, so a
+ * deployment has to opt in to offering them at all, even to its owner.
  */
 function adminEnabled() {
   if (process.env.DB_ADMIN === 'on') return true;
@@ -151,14 +155,20 @@ exports.samples = wrap(async (req, res) => {
 
 exports.query = wrap(async (req, res) => {
   const allowWrite = Boolean(req.body?.allowWrite);
-  if (allowWrite) requireAdmin();
+  if (allowWrite) {
+    requireRole('owner', req.user);
+    requireAdmin();
+  }
   const result = await db.runAs('sql-console', () => sqlRunner.run(req.body?.sql, { allowWrite }));
   res.json(result);
 });
 
 exports.explain = wrap(async (req, res) => {
   const allowWrite = Boolean(req.body?.allowWrite);
-  if (allowWrite) requireAdmin();
+  if (allowWrite) {
+    requireRole('owner', req.user);
+    requireAdmin();
+  }
   res.json(await sqlRunner.explain(req.body?.sql, { analyze: req.body?.analyze !== false, allowWrite }));
 });
 
@@ -197,7 +207,16 @@ exports.performance = wrap(async (req, res) => {
   const { rows: indexUsage } = await db.query(`
     SELECT s.relname AS table_name, s.indexrelname AS index_name, s.idx_scan AS scans, pg_relation_size(s.indexrelid) AS size_bytes
       FROM pg_stat_user_indexes s ORDER BY s.idx_scan DESC, s.relname LIMIT 40`);
-  res.json({ engine: db.describe(), queries: monitor.snapshot(), database: rows[0] || null, indexUsage });
+  res.json({
+    engine: db.describe(),
+    queries: monitor.snapshot(),
+    database: rows[0] || null,
+    indexUsage,
+    // What sits in front of the database: how often a remembered answer saved
+    // a query, and how many requests each limit let through or turned back.
+    caches: cacheStats(),
+    rateLimits: rateLimit.stats(),
+  });
 });
 
 exports.integrity = wrap(async (req, res) => {
@@ -219,6 +238,8 @@ exports.createBackup = wrap(async (req, res) => {
 
 exports.downloadBackup = wrap(async (req, res) => {
   const file = backup.backupPath(req.params.name);
+  // Every record the business has, in one file: never kept by a browser cache.
+  res.set('Cache-Control', 'no-store');
   res.download(file, req.params.name);
 });
 
@@ -247,6 +268,7 @@ exports.restore = [
 exports.exportSql = wrap(async (req, res) => {
   const sql = await backup.sqlDump();
   const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'application/sql; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="docdesk-data-${stamp}.sql"`);
   res.send(sql);
